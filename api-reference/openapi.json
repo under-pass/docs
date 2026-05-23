@@ -109,9 +109,17 @@
                       "example": "2026-05-23T12:53:38.076Z"
                     },
                     "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/EventDto"
+                      "type": "object",
+                      "properties": {
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/EventDto"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/PaginationDto"
+                        }
                       }
                     }
                   }
@@ -536,26 +544,26 @@
       },
       "EventDto": {
         "type": "object",
+        "description": "Full event payload returned by the public events endpoints.",
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "Event ID (cuid).",
+            "example": "cmp2x91zk02bvun01rfbq7bh5"
           },
           "account_id": {
-            "type": "string"
+            "type": "string",
+            "format": "uuid",
+            "description": "Organizer account UUID."
           },
           "name": {
             "type": "string"
           },
           "slug": {
-            "type": "string"
+            "type": "string",
+            "description": "URL-safe identifier used in `/events/public/{slug}`."
           },
           "description": {
-            "type": "string"
-          },
-          "start_date": {
-            "type": "string"
-          },
-          "end_date": {
             "type": "string"
           },
           "status": {
@@ -565,85 +573,143 @@
               "PUBLISHED",
               "ONGOING",
               "COMPLETED"
-            ]
+            ],
+            "description": "Public endpoints only return PUBLISHED."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "location_id": {
+            "type": "string"
+          },
+          "allows_split_payment": {
+            "type": "boolean"
+          },
+          "min_initial_payment_pct": {
+            "type": "integer",
+            "description": "Required initial payment % when split payment is enabled.",
+            "example": 50
+          },
+          "max_payment_count": {
+            "type": "integer",
+            "description": "Max number of installments allowed."
+          },
+          "pulep": {
+            "type": "string",
+            "description": "Colombian regulatory identifier. Empty string when not set."
+          },
+          "organizer_terms_url": {
+            "type": "string",
+            "description": "URL to organizer terms page. Empty string when not set."
+          },
+          "show_exact_availability": {
+            "type": "boolean",
+            "description": "When false, render \"Disponible\"/\"Agotado\" instead of exact counts."
+          },
+          "max_ticket_transfers": {
+            "type": "integer",
+            "nullable": true
+          },
+          "allows_ticket_upgrades": {
+            "type": "boolean"
+          },
+          "upgrade_same_stage_only": {
+            "type": "boolean"
+          },
+          "require_individual_data": {
+            "type": "boolean",
+            "description": "When true, checkout collects per-attendee info (one block per ticket \u00d7 quantity)."
+          },
+          "payment_provider": {
+            "type": "string",
+            "enum": [
+              "bold"
+            ],
+            "description": "Only present on the by-slug endpoint, not on the list response."
+          },
+          "pixelIntegration": {
+            "$ref": "#/components/schemas/PixelIntegrationDto",
+            "nullable": true,
+            "description": "Pixel + analytics tag IDs for client-side initialization. May be `null` when the organizer has no pixels configured. NEVER includes server-side secrets (e.g. Meta CAPI tokens) \u2014 those stay on the UnderPass backend."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "location": {
             "$ref": "#/components/schemas/LocationDto"
           },
-          "payment_provider": {
-            "type": "string",
-            "description": "Payment provider for this event (bold)"
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventMediaDto"
+            }
           },
-          "allows_split_payment": {
-            "type": "boolean",
-            "description": "Whether split/partial payments are allowed for this event"
+          "eventArtists": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventArtistDto"
+            },
+            "description": "Lineup. Sort by `position` ascending."
           },
-          "min_initial_payment_pct": {
+          "ticketTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TicketTypeDto"
+            }
+          },
+          "sellingStages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SellingStageDto"
+            }
+          },
+          "organizer": {
+            "$ref": "#/components/schemas/OrganizerDto"
+          },
+          "ticketAvailability": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TicketAvailabilityDto"
+            },
+            "description": "Denormalized \"what to render right now\" \u2014 already filtered to currently-purchasable rows. Use this directly in the ticket picker."
+          },
+          "processing_fee_rate": {
             "type": "number",
-            "description": "Minimum initial payment percentage (e.g., 50 for 50%)"
+            "description": "Bold processing fee rate (percentage). Only present on the by-slug endpoint. Use this in the checkout summary to render the buyer-paid service fee breakdown.",
+            "example": 0.85
           },
-          "max_payment_count": {
+          "ticket_commission_rate": {
             "type": "number",
-            "description": "Maximum number of payments allowed (e.g., 2 for pay now + pay later)"
-          },
-          "pulep": {
-            "type": "string",
-            "description": "PULEP registry number"
-          },
-          "organizer_terms_url": {
-            "type": "string",
-            "description": "URL to organizer terms & conditions document"
-          },
-          "show_exact_availability": {
-            "type": "boolean",
-            "description": "Show exact ticket count (true) or just Available/Sold Out badges (false)"
-          },
-          "max_ticket_transfers": {
-            "type": "number",
-            "description": "Max times a ticket can be transferred, null = unlimited"
-          },
-          "allows_ticket_upgrades": {
-            "type": "boolean",
-            "description": "Whether ticket upgrades are allowed"
-          },
-          "upgrade_same_stage_only": {
-            "type": "boolean",
-            "description": "Whether upgrade pricing uses the original selling stage"
-          },
-          "require_individual_data": {
-            "type": "boolean",
-            "description": "Require individual attendee data for each ticket"
-          },
-          "pixelIntegration": {
-            "$ref": "#/components/schemas/PixelIntegrationDto"
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
+            "description": "Ticket commission rate (percentage) applied to the buyer at checkout in addition to processing fees. Only present on the by-slug endpoint.",
+            "example": 0
           }
-        },
-        "required": [
-          "id",
-          "account_id",
-          "name",
-          "slug",
-          "description",
-          "start_date",
-          "status",
-          "created_at",
-          "updated_at"
-        ]
+        }
       },
       "LocationDto": {
         "type": "object",
+        "description": "Physical location of an event.",
         "properties": {
           "id": {
             "type": "string"
           },
           "venue": {
-            "type": "string"
+            "type": "string",
+            "example": "La Frecuencia Violeta"
           },
           "address": {
             "type": "string"
@@ -658,32 +724,39 @@
             "type": "string"
           },
           "zip_code": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "latitude": {
-            "type": "number"
+            "type": "number",
+            "nullable": true
           },
           "longitude": {
-            "type": "number"
+            "type": "number",
+            "nullable": true
           },
           "capacity": {
-            "type": "number"
+            "type": "integer",
+            "nullable": true
           },
           "details": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "created_at": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updated_at": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
-        },
-        "required": [
-          "id",
-          "created_at",
-          "updated_at"
-        ]
+        }
       },
       "StartCheckoutDto": {
         "type": "object",
@@ -777,19 +850,558 @@
       },
       "PixelIntegrationDto": {
         "type": "object",
-        "description": "Pixel tracking IDs configured by the organizer on each event. Init these on every page that renders event data (event detail, ticket selection, checkout, order confirmation). Always also init the platform Meta pixel `749891594864955` so UnderPass keeps a unified conversion view across tenants.",
+        "description": "Public-facing pixel + analytics tag IDs for an event. Initialize each on every page that renders event data (event detail, ticket select, checkout, order confirmation). All values are client-safe \u2014 meant to be embedded in browser scripts. **Server-side secrets** (e.g. Meta CAPI access tokens) are NEVER returned by this endpoint and must not be passed by clients.",
         "properties": {
           "meta_pixel_id": {
             "type": "string",
             "nullable": true,
-            "description": "Meta (Facebook) pixel ID set by the organizer. May be a single ID or comma-separated list (e.g. `123,456`). Initialize each separately via `fbq('init', '<id>')`.",
-            "example": "1234567890"
+            "description": "Meta (Facebook) pixel ID. May be a single ID or comma-separated list (e.g. `123,456`). Initialize each separately via `fbq(\"init\", \"<id>\")`.",
+            "example": "1493256712205722"
           },
           "tiktok_pixel_id": {
             "type": "string",
             "nullable": true,
-            "description": "TikTok pixel ID set by the organizer.",
+            "description": "TikTok pixel ID. Pass to `ttq.load(<id>)`.",
             "example": "C1A2B3C4D5E6"
+          },
+          "google_analytics_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "GA4 Measurement ID (`G-XXXXXXXXXX`). Pass to `gtag(\"config\", id)`."
+          },
+          "google_tag_manager_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "GTM container ID (`GTM-XXXXXXX`)."
+          },
+          "twitter_pixel_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Twitter / X conversion tracking pixel ID."
+          },
+          "linkedin_partner_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "LinkedIn Insight Tag partner ID."
+          }
+        }
+      },
+      "EventMediaDto": {
+        "type": "object",
+        "description": "Image or video attached to an event. Render `is_primary` first, then sort by `position`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "IMAGE",
+              "VIDEO"
+            ],
+            "example": "IMAGE"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "s3_key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "position": {
+            "type": "integer",
+            "nullable": true
+          },
+          "is_primary": {
+            "type": "boolean",
+            "description": "Render this as the hero image."
+          },
+          "is_secondary": {
+            "type": "boolean"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "file_size": {
+            "type": "integer",
+            "description": "Bytes."
+          },
+          "mime_type": {
+            "type": "string"
+          },
+          "dimensions": {
+            "type": "string",
+            "example": "1080x1350",
+            "description": "Format \"<width>x<height>\"."
+          },
+          "duration": {
+            "type": "number",
+            "description": "Seconds, for video media.",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "ArtistDto": {
+        "type": "object",
+        "description": "Performer / DJ. Most social fields are nullable.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "bio": {
+            "type": "string",
+            "nullable": true
+          },
+          "genre": {
+            "type": "string"
+          },
+          "image_url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "website": {
+            "type": "string",
+            "nullable": true
+          },
+          "instagram": {
+            "type": "string",
+            "description": "Handle including the `@`.",
+            "nullable": true
+          },
+          "facebook": {
+            "type": "string",
+            "nullable": true
+          },
+          "twitter": {
+            "type": "string",
+            "nullable": true
+          },
+          "spotify": {
+            "type": "string",
+            "nullable": true
+          },
+          "youtube": {
+            "type": "string",
+            "nullable": true
+          },
+          "soundcloud": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "EventArtistDto": {
+        "type": "object",
+        "description": "Lineup entry. Sort by `position` ascending when rendering the lineup.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "artist_id": {
+            "type": "string"
+          },
+          "performance_type": {
+            "type": "string",
+            "enum": [
+              "headliner",
+              "dj_set",
+              "live_set",
+              "support"
+            ],
+            "description": "Artist role. Treat unknown values as \"support\"."
+          },
+          "performance_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "stage_notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "position": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "artist": {
+            "$ref": "#/components/schemas/ArtistDto"
+          }
+        }
+      },
+      "LocalityDto": {
+        "type": "object",
+        "description": "A logical seating zone within an event (e.g. GENERAL, BACKSTAGE). Tickets are scoped to a locality.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "example": "GENERAL"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "amenities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_document_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CC",
+                "CE",
+                "PA",
+                "TI",
+                "NIT",
+                "PEP",
+                "DNI",
+                "RUT"
+              ]
+            },
+            "description": "Empty array means all document types are allowed."
+          },
+          "position": {
+            "type": "integer",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "TicketTypeDto": {
+        "type": "object",
+        "description": "A purchasable ticket variant within a locality. Pricing varies per `SellingStage`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "locality_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "example": "Early Bird"
+          },
+          "description": {
+            "type": "string"
+          },
+          "group_size": {
+            "type": "integer",
+            "description": "Number of attendees per ticket (1 = single, 2 = 2-for-1, etc.)."
+          },
+          "max_per_order": {
+            "type": "integer",
+            "nullable": true
+          },
+          "requires_info": {
+            "type": "boolean",
+            "description": "When true, buyer must fill in attendee info per ticket at checkout."
+          },
+          "transferable": {
+            "type": "boolean"
+          },
+          "allows_split_payment": {
+            "type": "boolean"
+          },
+          "min_initial_payment": {
+            "type": "number",
+            "nullable": true
+          },
+          "max_payment_installments": {
+            "type": "integer"
+          },
+          "promoter_commission": {
+            "type": "string",
+            "description": "Commission paid to promoters per sold ticket. **Decimal serialized as string** \u2014 parse before doing math (`parseFloat(promoter_commission)`).",
+            "example": "5000"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "locality": {
+            "$ref": "#/components/schemas/LocalityDto"
+          }
+        }
+      },
+      "StagePricingDto": {
+        "type": "object",
+        "description": "Price of a TicketType within a specific SellingStage.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "selling_stage_id": {
+            "type": "string"
+          },
+          "ticket_type_id": {
+            "type": "string"
+          },
+          "price": {
+            "type": "string",
+            "description": "Price in `currency` integer units (no decimals for COP). **Decimal serialized as string** \u2014 parse with `parseInt(price, 10)` for display.",
+            "example": "30000"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "COP"
+            ],
+            "description": "Currently always COP."
+          },
+          "is_courtesy": {
+            "type": "boolean",
+            "description": "Courtesy (gifted) ticket \u2014 no payment required."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "PRIVATE"
+            ],
+            "description": "`PRIVATE` tickets only appear when unlocked via a sales link or promo code."
+          },
+          "max_quantity_in_stage": {
+            "type": "integer",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "SellingStageDto": {
+        "type": "object",
+        "description": "A sales window for an event. Each ticket type has a `StagePricing` row per stage.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "example": "Preventa 1"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "max_tickets": {
+            "type": "integer",
+            "description": "Hard cap across all ticket types in this stage. `null` = uncapped.",
+            "nullable": true
+          },
+          "is_hidden": {
+            "type": "boolean",
+            "description": "Hidden stages are only revealed by promo codes that grant `UNLOCK_STAGE`."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "stagePricing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StagePricingDto"
+            },
+            "description": "Pricing per ticket type in this stage. Included on `ticketAvailability[].sellingStage`."
+          }
+        }
+      },
+      "TicketAvailabilityDto": {
+        "type": "object",
+        "description": "The denormalized \"what to render in the ticket picker\" view. One entry per (TicketType \u00d7 currently-active SellingStage) \u2014 already filtered to what the buyer can actually purchase right now.",
+        "properties": {
+          "ticketType": {
+            "$ref": "#/components/schemas/TicketTypeDto"
+          },
+          "sellingStage": {
+            "$ref": "#/components/schemas/SellingStageDto"
+          },
+          "totalDelta": {
+            "type": "integer",
+            "description": "Total available units across the locality."
+          },
+          "available": {
+            "type": "integer",
+            "description": "Remaining units for THIS ticket type. Render \"Agotado\" badge when `<= 0`."
+          },
+          "maxQuantity": {
+            "type": "integer",
+            "nullable": true
+          },
+          "stagePricing": {
+            "$ref": "#/components/schemas/StagePricingDto"
+          }
+        }
+      },
+      "OrganizerDto": {
+        "type": "object",
+        "description": "Public-facing organizer info shown on event pages. On the list endpoint only `collective` is populated; on the by-slug endpoint the legal / contact fields are also included so the page can render a full organizer card.",
+        "properties": {
+          "collective": {
+            "type": "string",
+            "description": "Organizer / collective display name.",
+            "example": "Euphorika"
+          },
+          "legalRepresentative": {
+            "type": "string",
+            "nullable": true,
+            "description": "Legal entity name. Slug endpoint only.",
+            "example": "EUPHORIKA SAS"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "nullable": true,
+            "description": "Public contact email for the organizer. Slug endpoint only."
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "description": "Public contact phone for the organizer. Slug endpoint only."
+          },
+          "nit": {
+            "type": "string",
+            "nullable": true,
+            "description": "Colombian tax ID (NIT). Slug endpoint only."
+          }
+        }
+      },
+      "PaginationDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "total": {
+            "type": "integer",
+            "example": 7
+          },
+          "total_pages": {
+            "type": "integer",
+            "example": 1
           }
         }
       }

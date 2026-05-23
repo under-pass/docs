@@ -21,14 +21,28 @@ Each event exposes a `pixelIntegration` object on its public payload
   "id": "...",
   "name": "Example Event",
   "pixelIntegration": {
-    "meta_pixel_id": "1234567890",
-    "tiktok_pixel_id": "C1A2B3C4D5E6"
+    "meta_pixel_id": "1493256712205722",
+    "tiktok_pixel_id": null,
+    "google_analytics_id": null,
+    "google_tag_manager_id": null,
+    "twitter_pixel_id": null,
+    "linkedin_partner_id": null
   }
 }
 ```
 
-Both fields are optional. `meta_pixel_id` may be **comma-separated** for
-organizers running multiple Meta pixels — initialize each independently.
+`pixelIntegration` itself may be `null` when the organizer hasn't configured
+any pixels. Each field is independently nullable. `meta_pixel_id` may be
+**comma-separated** for organizers running multiple Meta pixels — initialize
+each independently.
+
+<Warning>
+  **Client-safe fields only.** The public payload deliberately omits
+  server-side credentials (e.g. Meta Conversions API access tokens). Those
+  stay on the UnderPass backend, which fires server-side conversion events
+  on your behalf. If a field appears in the API reference for
+  `PixelIntegrationDto`, it's safe to embed in browser scripts.
+</Warning>
 
 ## Required pixel IDs to initialize
 

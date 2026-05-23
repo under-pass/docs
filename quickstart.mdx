@@ -28,11 +28,17 @@ async function listEvents() {
   );
   if (!res.ok) throw new Error(`List failed: ${res.status}`);
   const { data } = await res.json();
-  return data.events; // → [{ id, name, slug, start_date, location, image_url, ... }, ...]
+  return data.events; // → EventDto[] (see API reference for full shape)
+}
+
+// Hero image lives in `event.media[]`. Pick the one with `is_primary === true`.
+function heroImage(event) {
+  return event.media.find((m) => m.is_primary)?.url ?? event.media[0]?.url;
 }
 ```
 
-Render the list however you like — there's no required UI.
+Render the list however you like — there's no required UI. Note that `data` is
+`{ events: EventDto[], pagination: { page, limit, total, total_pages } }`.
 
 ## 2. Fetch event detail (with tickets)
 
