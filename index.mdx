@@ -27,18 +27,11 @@ ticket delivery — UnderPass owns all of that.
 
 ## How it fits together
 
-```
-┌──────────────────┐    HTTPS     ┌──────────────────────────┐
-│ Your frontend    │ ───────────► │ UnderPass Public API     │
-│ (any framework)  │ ◄─────────── │ api.underpass.com.co     │
-└──────────────────┘              └──────────────────────────┘
-                                              │
-                                              ▼
-                                  ┌──────────────────────────┐
-                                  │ Payment provider (Bold)  │
-                                  │ + invoicing + settlement │
-                                  └──────────────────────────┘
-```
+Your frontend (any framework) calls the UnderPass Public API at
+`api.underpass.com.co` over HTTPS. UnderPass owns everything downstream:
+
+- **Payment provider** — Bold or ePayco, whichever the organizer has configured
+- **Invoicing + settlement** — Alegra integration, monthly invoicing, fee accrual
 
 Your frontend never talks to the payment provider directly. After a buyer
 submits checkout, you redirect them to a URL we return — they pay there, then

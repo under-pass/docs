@@ -170,32 +170,13 @@ export function trackPurchase(value, currency = "COP", orderId) {
 
 ## When to fire — in the buyer journey
 
-```
-   ┌──────────────────────┐
-   │ Event detail page    │  ← injectPixels({ metaPixelId, tiktokPixelId })
-   │ /eventos/{slug}      │     • fires PageView automatically
-   └────────┬─────────────┘
-            │
-            ▼
-   ┌──────────────────────┐
-   │ Ticket selection     │  ← injectPixels(...) again on this page
-   └────────┬─────────────┘
-            │ user clicks "Pay"
-            ▼
-   ┌──────────────────────┐
-   │ Checkout submit      │  ← trackInitiateCheckout(grandTotal)
-   │                      │     THEN call /api/checkout/start
-   │                      │     THEN window.location = redirect_url
-   └────────┬─────────────┘
-            │
-            ▼  buyer pays on hosted page, returns to your success_url
-   ┌──────────────────────┐
-   │ Order confirmation   │  ← injectPixels(...) on mount
-   │ ?order_id=...        │     poll /api/checkout/status/{orderId}
-   │                      │     on status === "confirmed":
-   │                      │       trackPurchase(paid_amount, "COP", orderId)
-   └──────────────────────┘
-```
+| Step | Page / action | What to call |
+|---|---|---|
+| 1 | Event detail page (`/eventos/{slug}`) loads | `injectPixels({ metaPixelId, tiktokPixelId })` — fires `PageView` automatically |
+| 2 | Ticket selection page loads | `injectPixels(...)` again on this page |
+| 3 | Checkout submit (user clicks "Pay") | `trackInitiateCheckout(grandTotal)` **before** calling `/api/checkout/start`, then `window.location = redirect_url` |
+| 4 | Buyer pays on hosted page, returns to your `success_url` | `injectPixels(...)` on mount, poll `/api/checkout/status/{orderId}` |
+| 5 | Poll returns `status === "confirmed"` | `trackPurchase(paid_amount, "COP", orderId)` — exactly once |
 
 ## Common mistakes
 
