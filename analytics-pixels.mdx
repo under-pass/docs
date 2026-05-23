@@ -1,0 +1,231 @@
+---
+title: "Analytics Pixels"
+description: "Meta & TikTok pixel events you must fire so conversions show up correctly"
+---
+
+UnderPass keeps a unified view of conversions across all tenants for fraud
+prevention, paid-ads ROAS, and platform-level reporting. To make this work,
+**every white-label frontend must fire the same standard pixel events** at the
+same points in the funnel. Doing this wrong shows up as missing purchases on
+ad dashboards and disabled retargeting audiences.
+
+This page is your contract. Implement it once per page that renders event data.
+
+## Where pixel IDs come from
+
+Each event exposes a `pixelIntegration` object on its public payload
+(`GET /api/events/public/{slug}`):
+
+```json
+{
+  "id": "...",
+  "name": "Example Event",
+  "pixelIntegration": {
+    "meta_pixel_id": "1234567890",
+    "tiktok_pixel_id": "C1A2B3C4D5E6"
+  }
+}
+```
+
+Both fields are optional. `meta_pixel_id` may be **comma-separated** for
+organizers running multiple Meta pixels — initialize each independently.
+
+## Required pixel IDs to initialize
+
+On every page that's part of the buyer journey (event detail → tickets →
+checkout → order confirmation), initialize:
+
+| Pixel | When to init |
+| --- | --- |
+| **Platform Meta pixel** (`749891594864955`) | Always — required on every page |
+| **Event's `meta_pixel_id`** (each value, if comma-separated) | When the event has it set |
+| **Event's `tiktok_pixel_id`** | When the event has it set |
+
+The platform pixel is non-negotiable. Without it UnderPass loses
+cross-tenant attribution, and **your fraud/refund alerts will degrade**.
+
+## Events to fire
+
+| Event | Fire on | Meta `fbq.track` | TikTok `ttq.track` | Params |
+| --- | --- | --- | --- | --- |
+| Page view | Pixel init (automatic) | `PageView` | `page()` | — |
+| Initiate checkout | Buyer clicks "Pay" / submits checkout form | `InitiateCheckout` | `InitiateCheckout` | `{ value, currency }` |
+| Purchase | Order status transitions to `confirmed` (poll endpoint) | `Purchase` | `CompletePayment` | `{ value, currency }` plus Meta `{ eventID: orderId }` for CAPI dedup |
+
+**Currency is always `"COP"`** unless the event explicitly states otherwise.
+**`value` is the integer COP amount** (no decimals — COP has no minor unit).
+
+## Reference implementation
+
+Drop this into your frontend once. Plain JavaScript — no framework dependency.
+
+```js
+// ── pixel-scripts.js ──────────────────────────────────────────────────
+
+const PLATFORM_META_PIXEL_ID = "749891594864955";
+
+/**
+ * Inject Meta + TikTok pixel scripts. Call once per page (the very first
+ * render in your event-detail / ticket-select / checkout / confirmation
+ * pages). Re-initing on every navigation is fine — fbq dedupes.
+ */
+export function injectPixels({ metaPixelId, tiktokPixelId } = {}) {
+  // Build the Meta pixel ID list: platform + (organizer's, may be CSV)
+  const eventIds = (metaPixelId || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const metaIds = [
+    PLATFORM_META_PIXEL_ID,
+    ...eventIds.filter((id) => id !== PLATFORM_META_PIXEL_ID),
+  ];
+
+  // Meta base + init each pixel
+  (function (f, b, e, v) {
+    if (f.fbq) return;
+    const n = (f.fbq = function () {
+      n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
+    });
+    if (!f._fbq) f._fbq = n;
+    n.push = n;
+    n.loaded = !0;
+    n.version = "2.0";
+    n.queue = [];
+    const t = b.createElement(e);
+    t.async = !0;
+    t.src = v;
+    const s = b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t, s);
+  })(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
+  metaIds.forEach((id) => window.fbq("init", id));
+  window.fbq("track", "PageView");
+
+  // TikTok (only if the event has a TikTok pixel)
+  if (tiktokPixelId) {
+    (function (w, d, t) {
+      w.TiktokAnalyticsObject = t;
+      const ttq = (w[t] = w[t] || []);
+      ttq.methods = ["page", "track", "identify", "load", "ready"];
+      ttq.setAndDefer = function (a, b) {
+        a[b] = function () {
+          try {
+            a._i = a._i || [];
+            a._i.push([b, arguments]);
+          } catch (_) {}
+        };
+      };
+      ttq.methods.forEach((m) => ttq.setAndDefer(ttq, m));
+      ttq.load = function (e) {
+        const r = "https://analytics.tiktok.com/i18n/pixel/events.js";
+        ttq._i = ttq._i || {};
+        ttq._i[e] = [];
+        ttq._i[e]._u = r;
+        ttq._t = ttq._t || {};
+        ttq._t[e] = +new Date();
+        const i = d.createElement("script");
+        i.type = "text/javascript";
+        i.async = !0;
+        i.src = `${r}?sdkid=${e}&lib=${t}`;
+        const a = d.getElementsByTagName("script")[0];
+        a.parentNode.insertBefore(i, a);
+      };
+      ttq.load(tiktokPixelId);
+      ttq.page();
+    })(window, document, "ttq");
+  }
+}
+
+/** Fire when the buyer submits checkout — BEFORE redirecting to the payment provider. */
+export function trackInitiateCheckout(value, currency = "COP") {
+  const params = { value, currency };
+  window.fbq?.("track", "InitiateCheckout", params);
+  window.ttq?.track?.("InitiateCheckout", params);
+}
+
+/**
+ * Fire when the order status transitions to `confirmed`.
+ * Pass `orderId` so Meta can dedup against any future server-side CAPI events.
+ */
+export function trackPurchase(value, currency = "COP", orderId) {
+  const params = { value, currency };
+  const options = orderId ? { eventID: orderId } : undefined;
+  window.fbq?.("track", "Purchase", params, options);
+  window.ttq?.track?.("CompletePayment", params);
+}
+```
+
+## When to fire — in the buyer journey
+
+```
+   ┌──────────────────────┐
+   │ Event detail page    │  ← injectPixels({ metaPixelId, tiktokPixelId })
+   │ /eventos/{slug}      │     • fires PageView automatically
+   └────────┬─────────────┘
+            │
+            ▼
+   ┌──────────────────────┐
+   │ Ticket selection     │  ← injectPixels(...) again on this page
+   └────────┬─────────────┘
+            │ user clicks "Pay"
+            ▼
+   ┌──────────────────────┐
+   │ Checkout submit      │  ← trackInitiateCheckout(grandTotal)
+   │                      │     THEN call /api/checkout/start
+   │                      │     THEN window.location = redirect_url
+   └────────┬─────────────┘
+            │
+            ▼  buyer pays on hosted page, returns to your success_url
+   ┌──────────────────────┐
+   │ Order confirmation   │  ← injectPixels(...) on mount
+   │ ?order_id=...        │     poll /api/checkout/status/{orderId}
+   │                      │     on status === "confirmed":
+   │                      │       trackPurchase(paid_amount, "COP", orderId)
+   └──────────────────────┘
+```
+
+## Common mistakes
+
+<AccordionGroup>
+  <Accordion title="Firing Purchase on the success_url page load instead of on confirmed status">
+    The buyer's return-from-payment page loads BEFORE the order has actually
+    confirmed (Bold webhook arrives asynchronously). Firing Purchase on page
+    load over-reports — every cancelled-but-redirected buyer counts as a
+    purchase. Always wait for `getCheckoutStatus` to return `confirmed`
+    before firing.
+  </Accordion>
+  <Accordion title="Forgetting the platform Meta pixel">
+    If you only init the event's own pixel, UnderPass-level conversion
+    reporting breaks. The platform pixel `749891594864955` is required on
+    every page. Init it FIRST, then any organizer pixels.
+  </Accordion>
+  <Accordion title="Firing InitiateCheckout multiple times on form re-render">
+    React/Vue re-renders shouldn't refire InitiateCheckout. Fire exactly once
+    per submit click, ideally in the same handler that calls
+    `/api/checkout/start`. Guard with a `useRef` flag if needed.
+  </Accordion>
+  <Accordion title="Wrong currency or fractional value">
+    Currency is `"COP"` for Colombian Pesos. Values are integer COP — no
+    decimals. Don't divide by 100; that's for currencies with minor units.
+  </Accordion>
+  <Accordion title="Missing eventID on Purchase">
+    Meta's Conversion API (server-side) will eventually deduplicate against
+    your client-side Purchase event. Always pass `{ eventID: orderId }` so
+    UnderPass can match the two halves.
+  </Accordion>
+</AccordionGroup>
+
+## What we do NOT need you to fire
+
+For clarity — these are handled by UnderPass server-side and you should
+**not** fire them:
+
+- `Lead` / `CompleteRegistration` (no buyer registration step exists)
+- `AddToCart` / `AddPaymentInfo` (UnderPass's checkout is single-step)
+- Subscription events (no recurring revenue model)
+
+If you need a custom event for your own analytics, fire it on your own
+pixel only — not on the UnderPass platform pixel.
+
+## Need help?
+
+[developers@underpass.com.co](mailto:developers@underpass.com.co)

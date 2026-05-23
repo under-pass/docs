@@ -133,14 +133,96 @@ const result = await pollOrder(session.order_id);
 console.log(result.status); // "confirmed"
 ```
 
+## Optional features
+
+These slot into the same flow whenever the event has them enabled. Skip
+the ones your tenants don't use.
+
+### Promo codes
+
+Validate a code before the user submits checkout. Some codes unlock hidden
+selling stages — re-fetch the event with `?unlocked_stages=...` to reveal them.
+
+```js
+async function validatePromoCode({ eventId, code }) {
+  const res = await fetch(`${API}/api/promo-codes/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event_id: eventId, code }),
+  });
+  const { data } = await res.json();
+  return data;
+  // → { valid, effect_type, discount, unlocked_stages?, ... }
+}
+```
+
+Pass the validated code on the `startCheckout` payload as `promo_code` so the
+backend re-applies the discount on order creation.
+
+### Sales links (private presales / promoter attribution)
+
+A sales link is a per-event code that unlocks private selling stages and/or
+attributes the sale to a promoter. Validate before showing tickets:
+
+```js
+async function validateSalesLink({ eventId, code }) {
+  const res = await fetch(`${API}/api/sales-links/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event_id: eventId, code }),
+  });
+  const { data } = await res.json();
+  return data;
+}
+```
+
+When valid, fetch the event with `?link={code}` so the response includes the
+unlocked private tickets:
+
+```js
+const event = await fetch(`${API}/api/events/public/${slug}?link=${code}`)
+  .then((r) => r.json()).then((b) => b.data);
+```
+
+### Referrals
+
+Show a referral program panel on event pages so buyers see what they'd earn
+for sharing:
+
+```js
+async function getReferralProgram(eventId) {
+  const res = await fetch(`${API}/api/referrals/program/${eventId}`);
+  if (res.status === 404) return null; // event has no program
+  const { data } = await res.json();
+  return data; // → { tiers: [...], terms, ... }
+}
+```
+
+If the buyer arrived via `?ref={code}`, validate it before checkout:
+
+```js
+async function validateReferralCode({ eventId, code }) {
+  const res = await fetch(`${API}/api/referrals/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event_id: eventId, code }),
+  });
+  const { data } = await res.json();
+  return data;
+}
+```
+
+Pass the validated code on the `startCheckout` payload as `referral_code` for
+attribution.
+
 ## What's next
 
 <CardGroup cols={2}>
   <Card title="Full API reference" icon="code" href="/api-reference/introduction">
     Every payload field, every response shape, every error code.
   </Card>
-  <Card title="Promo codes" icon="ticket" href="/api-reference/introduction">
-    Optional: validate codes before checkout, unlock hidden selling stages.
+  <Card title="Identity & scoping" icon="shield" href="/#identity-and-scoping">
+    How `account_id`, ticket IDs, and (optionally) API keys gate access.
   </Card>
 </CardGroup>
 

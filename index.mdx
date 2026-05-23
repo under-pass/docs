@@ -11,11 +11,14 @@ description: "Build your own event landing and checkout on top of the UnderPass 
 
 ## What you get
 
-A small, stable HTTP API that lets you:
+A small, stable HTTP API that covers the full sales journey:
 
 - **List events** for your tenant account
 - **Render an event detail page** with selling stages, ticket types, and organizer info
-- **Validate promo codes**
+- **Validate promo codes** — including codes that unlock hidden selling stages
+- **Validate sales links** — for promoter-attributed or private-presale flows
+- **Fetch referral programs + validate referral codes** — feature-flag the
+  referral UI on your event pages
 - **Start a checkout session** that redirects the buyer to a hosted payment page
 - **Poll order status** after payment to render a confirmation screen
 
@@ -41,17 +44,29 @@ Your frontend never talks to the payment provider directly. After a buyer
 submits checkout, you redirect them to a URL we return — they pay there, then
 land back on a URL you provide. You poll us to render the confirmation page.
 
-## The five endpoints you need
+## The endpoints
+
+### Core sales flow (always required)
 
 | Verb | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/events/public?account_id=…` | List your tenant's published events |
-| `GET` | `/api/events/public/{slug}` | Single event detail (with tickets) |
+| `GET` | `/api/events/public/{slug}` | Single event detail (with tickets, selling stages, organizer) |
 | `POST` | `/api/checkout/allowed-document-types` | Filter document types per locality |
 | `POST` | `/api/checkout/start` | Create an order, get a payment redirect URL |
 | `GET` | `/api/checkout/status/{orderId}` | Poll order status post-payment |
 
-Optional: `POST /api/promo-codes/validate` if your events use promo codes.
+### Feature endpoints (enable per event/tenant)
+
+| Verb | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/promo-codes/validate` | Validate a promo code; may also unlock hidden selling stages |
+| `POST` | `/api/sales-links/validate` | Validate a private sales link code; unlocks private tickets |
+| `GET` | `/api/referrals/program/{eventId}` | Public referral program details for an event |
+| `POST` | `/api/referrals/validate` | Validate a referral code on checkout |
+
+Anything outside this list is not reachable from the public internet —
+the ingress only allows these specific paths through.
 
 ## Identity & scoping
 
@@ -71,6 +86,10 @@ operations beyond ticket purchase) we issue per-tenant API keys — sent as
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/quickstart">
     End-to-end JavaScript example: list → checkout → confirm.
+  </Card>
+  <Card title="Analytics pixels" icon="chart-line" href="/analytics-pixels">
+    **Required**: Meta & TikTok pixel events you must fire so conversions
+    show up correctly. Skip this and ad attribution breaks.
   </Card>
   <Card title="API reference" icon="code" href="/api-reference/introduction">
     Every endpoint, payload, and response.

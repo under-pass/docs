@@ -310,6 +310,60 @@
           "promo-codes"
         ]
       }
+    },
+    "/api/sales-links/validate": {
+      "post": {
+        "operationId": "SalesLinksController_validateSalesLink",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Validate a sales link code (public)",
+        "tags": [
+          "sales-links"
+        ]
+      }
+    },
+    "/api/referrals/program/{eventId}": {
+      "get": {
+        "operationId": "ReferralsController_getPublicReferralProgram",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Get public referral program info",
+        "tags": [
+          "referrals"
+        ]
+      }
+    },
+    "/api/referrals/validate": {
+      "post": {
+        "operationId": "ReferralsController_validateReferralCode",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Validate a referral code (public)",
+        "tags": [
+          "referrals"
+        ]
+      }
     }
   },
   "components": {
@@ -561,8 +615,7 @@
             "description": "Require individual attendee data for each ticket"
           },
           "pixelIntegration": {
-            "type": "object",
-            "description": "Pixel tracking integration"
+            "$ref": "#/components/schemas/PixelIntegrationDto"
           },
           "created_at": {
             "type": "string"
@@ -719,6 +772,24 @@
           "client_ip_address": {
             "type": "string",
             "description": "Client IP address"
+          }
+        }
+      },
+      "PixelIntegrationDto": {
+        "type": "object",
+        "description": "Pixel tracking IDs configured by the organizer on each event. Init these on every page that renders event data (event detail, ticket selection, checkout, order confirmation). Always also init the platform Meta pixel `749891594864955` so UnderPass keeps a unified conversion view across tenants.",
+        "properties": {
+          "meta_pixel_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Meta (Facebook) pixel ID set by the organizer. May be a single ID or comma-separated list (e.g. `123,456`). Initialize each separately via `fbq('init', '<id>')`.",
+            "example": "1234567890"
+          },
+          "tiktok_pixel_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "TikTok pixel ID set by the organizer.",
+            "example": "C1A2B3C4D5E6"
           }
         }
       }
