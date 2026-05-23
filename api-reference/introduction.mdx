@@ -1,33 +1,94 @@
 ---
-title: 'Introduction'
-description: 'Example section for showcasing API endpoints'
+title: "API Reference"
+description: "Public HTTP API for events and ticket checkout"
 ---
 
-<Note>
-  If you're not looking to build API reference documentation, you can delete
-  this section by removing the api-reference folder.
-</Note>
+The UnderPass Public API exposes a small, stable surface for white-label
+integrators to build their own event landing and checkout. The full OpenAPI
+3.0 spec is in this repo at [`api-reference/openapi.json`](https://github.com/under-pass/docs/blob/main/api-reference/openapi.json) — Mintlify renders one
+page per endpoint automatically.
 
-## Welcome
+## Base URLs
 
-There are two ways to build API documentation: [OpenAPI](https://mintlify.com/docs/api-playground/openapi/setup) and [MDX components](https://mintlify.com/docs/api-playground/mdx/configuration). For the starter kit, we are using the following OpenAPI specification.
+| Environment | URL |
+| --- | --- |
+| Production | `https://api.underpass.com.co` |
+| Development | `https://api-dev.underpass.com.co` |
 
-<Card
-  title="Plant Store Endpoints"
-  icon="leaf"
-  href="https://github.com/mintlify/starter/blob/main/api-reference/openapi.json"
->
-  View the OpenAPI specification file
-</Card>
+All endpoints are prefixed with `/api`.
 
 ## Authentication
 
-All API endpoints are authenticated using Bearer tokens and picked up from the specification file.
+The endpoints in this reference are **public** — no bearer token required.
+Identity is established at two layers:
+
+1. **Tenant scoping** — `account_id` on `GET /events/public` filters to your
+   tenant's events. Checkout endpoints scope implicitly through the
+   `ticket_type_id` you pass (which belongs to an event, which belongs to
+   your account).
+2. **Optional API key** — for higher-trust integrations or rate-limit
+   increases, pass `X-Underpass-Api-Key: <key>` (issued by UnderPass during
+   onboarding). Not required for the public surface.
+
+## Response envelope
+
+Every successful response is wrapped:
 
 ```json
-"security": [
-  {
-    "bearerAuth": []
-  }
-]
+{
+  "statusCode": 200,
+  "message": "Request successful",
+  "data": <your payload>,
+  "timestamp": "2026-05-23T12:34:56.789Z"
+}
 ```
+
+Always read `data`. Errors use a different shape:
+
+```json
+{
+  "statusCode": 404,
+  "code": "EVENT_NOT_FOUND",
+  "message": "Event not found",
+  "detail": { "slug": "foo" },
+  "timestamp": "2026-05-23T12:34:56.789Z"
+}
+```
+
+Match on `code` (stable identifier) rather than `message` (subject to copy
+changes).
+
+## Rate limits
+
+The public endpoints are rate-limited at the ingress layer. Default budget
+is generous for normal browsing patterns; if you hit a `429`, back off
+with exponential delay and retry. Per-tenant limit increases are available
+via the API key path — contact us.
+
+## Idempotency
+
+`POST /checkout/start` is **not idempotent** on its own. If you retry a
+checkout, you create a second order. Use the returned `order_id` to track
+which one is in-flight; show a "creating order…" state while the call is
+pending and **don't auto-retry on timeout** — instead, fetch the order list
+for the buyer's email or treat it as failed.
+
+For the next major version we plan to support an `Idempotency-Key` header
+to make safe retries possible. Until then, gate the submit button.
+
+## SDK?
+
+We don't ship a polished SDK yet — the surface is small enough that plain
+`fetch` works well. TypeScript types are auto-generated from the OpenAPI
+spec; we recommend [`openapi-typescript`](https://openapi-ts.dev/) to
+generate types in your own repo:
+
+```bash
+npx openapi-typescript \
+  https://docs.underpass.com.co/api-reference/openapi.json \
+  --output ./src/lib/underpass-api.d.ts
+```
+
+## Contact
+
+Issues, questions, missing endpoints: [developers@underpass.com.co](mailto:developers@underpass.com.co).

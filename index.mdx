@@ -1,97 +1,80 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "UnderPass Developer Docs"
+description: "Build your own event landing and checkout on top of the UnderPass platform"
 ---
 
-## Setting up
+<Note>
+  This documentation is for **white-label integrators** who want to host their own
+  branded event listing and ticket checkout, while UnderPass handles tickets,
+  orders, payments, and settlements behind the scenes.
+</Note>
 
-Get your documentation site up and running in minutes.
+## What you get
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+A small, stable HTTP API that lets you:
 
-## Make it yours
+- **List events** for your tenant account
+- **Render an event detail page** with selling stages, ticket types, and organizer info
+- **Validate promo codes**
+- **Start a checkout session** that redirects the buyer to a hosted payment page
+- **Poll order status** after payment to render a confirmation screen
 
-Design a docs site that looks great and empowers your users.
+You don't need to handle payments, settlement, tax calculation, invoices, or
+ticket delivery — UnderPass owns all of that.
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+## How it fits together
+
+```
+┌──────────────────┐    HTTPS     ┌──────────────────────────┐
+│ Your frontend    │ ───────────► │ UnderPass Public API     │
+│ (any framework)  │ ◄─────────── │ api.underpass.com.co     │
+└──────────────────┘              └──────────────────────────┘
+                                              │
+                                              ▼
+                                  ┌──────────────────────────┐
+                                  │ Payment provider (Bold)  │
+                                  │ + invoicing + settlement │
+                                  └──────────────────────────┘
+```
+
+Your frontend never talks to the payment provider directly. After a buyer
+submits checkout, you redirect them to a URL we return — they pay there, then
+land back on a URL you provide. You poll us to render the confirmation page.
+
+## The five endpoints you need
+
+| Verb | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/events/public?account_id=…` | List your tenant's published events |
+| `GET` | `/api/events/public/{slug}` | Single event detail (with tickets) |
+| `POST` | `/api/checkout/allowed-document-types` | Filter document types per locality |
+| `POST` | `/api/checkout/start` | Create an order, get a payment redirect URL |
+| `GET` | `/api/checkout/status/{orderId}` | Poll order status post-payment |
+
+Optional: `POST /api/promo-codes/validate` if your events use promo codes.
+
+## Identity & scoping
+
+All requests are scoped to your **tenant account UUID** (`account_id`), provided
+during onboarding. There's no per-user authentication for these endpoints —
+buyers don't need accounts to purchase tickets. The `account_id` on listing
+endpoints filters to your events; ticket type IDs on checkout endpoints
+implicitly scope to your tenant because tickets belong to events that belong
+to your account.
+
+For higher-trust integrations (rate-limit increases, audit logging, write
+operations beyond ticket purchase) we issue per-tenant API keys — sent as
+`X-Underpass-Api-Key`. Not required for the public surface above.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    End-to-end JavaScript example: list → checkout → confirm.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="API reference" icon="code" href="/api-reference/introduction">
+    Every endpoint, payload, and response.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
-
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+Need help? Email [developers@underpass.com.co](mailto:developers@underpass.com.co).
