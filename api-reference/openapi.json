@@ -231,7 +231,7 @@
     },
     "/api/checkout/start": {
       "post": {
-        "description": "Initiates a checkout session for purchasing tickets. Returns a redirect URL for payment.",
+        "description": "Initiates a checkout session for purchasing tickets. Returns a redirect URL for payment.\n\nPurchase limits are enforced here — a `400` carries a machine `code` your UI should branch on:\n\n| `code` | Meaning |\n| --- | --- |\n| `INSUFFICIENT_TICKETS` | Not enough inventory for the requested quantity. |\n| `MAX_PER_ORDER_EXCEEDED` | An item exceeds its ticket type's `max_per_order`. |\n| `MAX_TICKETS_PER_ORDER_EXCEEDED` | Total tickets exceed the event's `max_tickets_per_order`. |\n| `MAX_TICKETS_PER_EMAIL_EXCEEDED` | The buyer email reached the event's `max_tickets_per_email` across its live orders. |\n\nError bodies follow `{ code, message, detail }` — `detail` includes the limit and the requested amount.",
         "operationId": "CheckoutController_startCheckout",
         "parameters": [],
         "requestBody": {
@@ -256,7 +256,7 @@
             }
           },
           "400": {
-            "description": "Invalid request or tickets not available"
+            "description": "Invalid request, tickets not available, or a purchase limit was exceeded (`INSUFFICIENT_TICKETS`, `MAX_PER_ORDER_EXCEEDED`, `MAX_TICKETS_PER_ORDER_EXCEEDED`, `MAX_TICKETS_PER_EMAIL_EXCEEDED`)"
           },
           "404": {
             "description": "Event not found"
@@ -615,6 +615,16 @@
             "type": "integer",
             "nullable": true
           },
+          "max_tickets_per_order": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Maximum total tickets (quantity x group_size) a single order may contain. `null` = unlimited. Enforced server-side at checkout start (`MAX_TICKETS_PER_ORDER_EXCEEDED`); cap your quantity selector to this value."
+          },
+          "max_tickets_per_email": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Maximum total tickets a single customer email can accumulate across live (pending/confirmed) orders for this event. `null` = unlimited. Enforced server-side at checkout start (`MAX_TICKETS_PER_EMAIL_EXCEEDED`)."
+          },
           "allows_ticket_upgrades": {
             "type": "boolean"
           },
@@ -623,7 +633,7 @@
           },
           "require_individual_data": {
             "type": "boolean",
-            "description": "When true, checkout collects per-attendee info (one block per ticket \u00d7 quantity)."
+            "description": "When true, checkout collects per-attendee info (one block per ticket × quantity)."
           },
           "payment_provider": {
             "type": "string",
@@ -635,7 +645,7 @@
           "pixelIntegration": {
             "$ref": "#/components/schemas/PixelIntegrationDto",
             "nullable": true,
-            "description": "Pixel + analytics tag IDs for client-side initialization. May be `null` when the organizer has no pixels configured. NEVER includes server-side secrets (e.g. Meta CAPI tokens) \u2014 those stay on the UnderPass backend."
+            "description": "Pixel + analytics tag IDs for client-side initialization. May be `null` when the organizer has no pixels configured. NEVER includes server-side secrets (e.g. Meta CAPI tokens) — those stay on the UnderPass backend."
           },
           "created_at": {
             "type": "string",
@@ -686,7 +696,7 @@
             "items": {
               "$ref": "#/components/schemas/TicketAvailabilityDto"
             },
-            "description": "Denormalized \"what to render right now\" \u2014 already filtered to currently-purchasable rows. Use this directly in the ticket picker."
+            "description": "Denormalized \"what to render right now\" — already filtered to currently-purchasable rows. Use this directly in the ticket picker."
           },
           "processing_fee_rate": {
             "type": "number",
@@ -850,7 +860,7 @@
       },
       "PixelIntegrationDto": {
         "type": "object",
-        "description": "Public-facing pixel + analytics tag IDs for an event. Initialize each on every page that renders event data (event detail, ticket select, checkout, order confirmation). All values are client-safe \u2014 meant to be embedded in browser scripts. **Server-side secrets** (e.g. Meta CAPI access tokens) are NEVER returned by this endpoint and must not be passed by clients.",
+        "description": "Public-facing pixel + analytics tag IDs for an event. Initialize each on every page that renders event data (event detail, ticket select, checkout, order confirmation). All values are client-safe — meant to be embedded in browser scripts. **Server-side secrets** (e.g. Meta CAPI access tokens) are NEVER returned by this endpoint and must not be passed by clients.",
         "properties": {
           "meta_pixel_id": {
             "type": "string",
@@ -1173,7 +1183,8 @@
           },
           "max_per_order": {
             "type": "integer",
-            "nullable": true
+            "nullable": true,
+            "description": "Maximum quantity of this ticket type in a single order. `null` = unlimited. Enforced server-side at checkout start (`MAX_PER_ORDER_EXCEEDED`); also cap your UI selector."
           },
           "requires_info": {
             "type": "boolean",
@@ -1194,7 +1205,7 @@
           },
           "promoter_commission": {
             "type": "string",
-            "description": "Commission paid to promoters per sold ticket. **Decimal serialized as string** \u2014 parse before doing math (`parseFloat(promoter_commission)`).",
+            "description": "Commission paid to promoters per sold ticket. **Decimal serialized as string** — parse before doing math (`parseFloat(promoter_commission)`).",
             "example": "5000"
           },
           "created_at": {
@@ -1230,7 +1241,7 @@
           },
           "price": {
             "type": "string",
-            "description": "Price in `currency` integer units (no decimals for COP). **Decimal serialized as string** \u2014 parse with `parseInt(price, 10)` for display.",
+            "description": "Price in `currency` integer units (no decimals for COP). **Decimal serialized as string** — parse with `parseInt(price, 10)` for display.",
             "example": "30000"
           },
           "currency": {
@@ -1242,7 +1253,7 @@
           },
           "is_courtesy": {
             "type": "boolean",
-            "description": "Courtesy (gifted) ticket \u2014 no payment required."
+            "description": "Courtesy (gifted) ticket — no payment required."
           },
           "visibility": {
             "type": "string",
@@ -1326,7 +1337,7 @@
       },
       "TicketAvailabilityDto": {
         "type": "object",
-        "description": "The denormalized \"what to render in the ticket picker\" view. One entry per (TicketType \u00d7 currently-active SellingStage) \u2014 already filtered to what the buyer can actually purchase right now.",
+        "description": "The denormalized \"what to render in the ticket picker\" view. One entry per (TicketType × currently-active SellingStage) — already filtered to what the buyer can actually purchase right now.",
         "properties": {
           "ticketType": {
             "$ref": "#/components/schemas/TicketTypeDto"

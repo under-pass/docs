@@ -60,6 +60,13 @@ async function getEvent(slug) {
 Each `ticket_type` has an `id`, `name`, `price`, `available`, and `locality`
 info. Render the picker, let the buyer select quantities.
 
+<Warning>
+  Respect the purchase limits when rendering the picker: cap each ticket type's
+  selector at `ticket_type.max_per_order`, and the whole cart at the event's
+  `max_tickets_per_order` (both `null` = unlimited). These limits are also
+  enforced server-side at checkout start — bypassing the UI just earns a `400`.
+</Warning>
+
 ## 3. Start checkout
 
 After the buyer picks tickets + fills in their info, create the order:
@@ -81,6 +88,13 @@ async function startCheckout({ eventId, items, customer }) {
   return data; // → { order_id, payment_provider, redirect_url, total_amount }
 }
 ```
+
+A `400` here carries a machine `code` you should surface to the buyer instead
+of a generic failure — notably `INSUFFICIENT_TICKETS` (inventory ran out),
+`MAX_PER_ORDER_EXCEEDED` / `MAX_TICKETS_PER_ORDER_EXCEEDED` (per-order purchase
+limits), and `MAX_TICKETS_PER_EMAIL_EXCEEDED` (the email already holds the
+maximum tickets allowed for this event). See the API reference for the
+`{ code, message, detail }` error shape.
 
 Redirect the buyer to `redirect_url`. They pay on the provider's hosted
 checkout page (Bold). When done, they land back on a URL you provide

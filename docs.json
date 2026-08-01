@@ -4,9 +4,9 @@
   "name": "UnderPass Developer Docs",
   "description": "Public API for events and ticket checkout on the UnderPass platform",
   "colors": {
-    "primary": "#0EA5E9",
-    "light": "#38BDF8",
-    "dark": "#0369A1"
+    "primary": "#02A586",
+    "light": "#00DAC6",
+    "dark": "#027a63"
   },
   "favicon": "/favicon.png",
   "navigation": {
