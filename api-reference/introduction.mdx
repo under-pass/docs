@@ -27,7 +27,7 @@ Identity is established at two layers:
    `ticket_type_id` you pass (which belongs to an event, which belongs to
    your account).
 2. **Optional API key** — for higher-trust integrations or rate-limit
-   increases, pass `X-Underpass-Api-Key: <key>` (issued by UnderPass during
+   increases, pass `X-UnderPass-Api-Key: <key>` (issued by UnderPass during
    onboarding). Not required for the public surface.
 
 ## Response envelope
@@ -75,6 +75,13 @@ for the buyer's email or treat it as failed.
 
 For the next major version we plan to support an `Idempotency-Key` header
 to make safe retries possible. Until then, gate the submit button.
+
+## What is in the reference
+
+Events and seat maps (`/api/events/public/*`), reservations and the waiting room
+(`/api/checkout/holds`, `/api/checkout/queue`), checkout and order status, and the promo-code,
+sales-link and referral validators. Every field added after v1.0 is optional and opt-in per
+event; see the [changelog](/changelog).
 
 ## SDK?
 

@@ -1,0 +1,52 @@
+---
+title: "Changelog"
+description: "What changed in the public API, newest first. Everything is additive and opt-in per event."
+---
+
+<Update label="October 2026" description="v1.3">
+  **Waiting room.** `POST /api/checkout/queue`, `GET|DELETE /api/checkout/queue/{id}`;
+  `event.waiting_room`, `waiting_room_opens_at`, `waiting_room_rate`, `waiting_room_minutes`;
+  `queue_pass` on holds and `checkout/start`. Events with the room on answer `403 QUEUE_PASS_REQUIRED`
+  to a reservation without a turn. [Guide](/guides/waiting-room).
+
+  **Numbered seating.** `locality.seating`; `GET /api/events/public/{slug}/seating`,
+  `…/seating/occupancy`, `POST …/seating/best-available`; `seat_ids` on hold and checkout items;
+  `seat_label` on tickets; `409 SEAT_TAKEN`. Items without seats get the best available.
+  [Guide](/guides/seating).
+
+  **Multi-date events.** `performances[]` on the event payload, `?performance_id=` on the slug
+  route, `performance_id` on items (required only when there are several dates,
+  `400 PERFORMANCE_REQUIRED`). [Guide](/guides/performances).
+
+  **Reservations.** `POST /api/checkout/holds`, `GET|PATCH|DELETE /api/checkout/holds/{id}`,
+  `hold_id` on `checkout/start`, `event.hold_minutes`; `available` is now net of other buyers'
+  holds and `reserved` is reported. `409 HOLD_EXPIRED` / `HOLD_NOT_ACTIVE`. [Guide](/guides/reservations).
+
+  **Order status** gained `PARTIALLY_PAID`, `remaining_amount`, `total_installments`,
+  `paid_installments`, `payments[]`, ticket objects, `event` and `customer`.
+</Update>
+
+<Update label="September – October 2026" description="v1.2">
+  **Bar perks.** `ticketType.barPerks[]` on the event payload; `bar_perks[]` on `checkout/start`
+  for purchasable perks; `BAR_PERK_*` error codes. [Guide](/guides/bar-perks).
+
+  **Full-funnel pixels.** `ViewContent`, `AddToCart`, `InitiateCheckout` (on `checkout/start`
+  return, keyed by `order_id`) and `Purchase` / `CompletePayment` (first payment), with
+  `contents`; server-side counterparts on Meta CAPI and TikTok Events API deduplicated by the
+  order id; advanced matching. [Contract](/analytics-pixels).
+
+  **Marketing attribution.** `tracking` accepts `utm_*`, `gclid`, `fbclid`, `ttclid`, `ttp`,
+  `referrer`, `landing_page`, `channel`. [Guide](/guides/attribution).
+
+  **Ticket attributes.** `entry_cutoff`, `late_fee`, `min_consumption` on ticket types.
+  [Guide](/guides/ticket-attributes).
+</Update>
+
+<Update label="September 2026" description="v1.1">
+  **Attendees.** `items[].attendees` issues each ticket to a person; `event.require_individual_data`;
+  `400 ATTENDEE_COUNT_MISMATCH`. [Guide](/guides/group-tickets-and-attendees).
+
+  **ePayco** documented as the second payment provider: `payment_provider` is `bold`, `epayco`
+  or `FREE`. Purchase limits (`max_tickets_per_order`, `max_tickets_per_email`,
+  `ticket_type.max_per_order`) have been in v1.0 since August.
+</Update>

@@ -1,0 +1,65 @@
+---
+title: "Multi-date events (performances)"
+description: "One event, several dates: a date selector before the tickets"
+---
+
+An event can play on several dates ("funciones"). Stock, holds and tickets are **per date**;
+localities, ticket types, selling stages and prices are shared. Every event has at least one
+date, so nothing changes for you until an organizer adds a second one.
+
+## Reading the dates
+
+`GET /api/events/public/{slug}` carries `performances[]`:
+
+```json
+{
+  "performances": [
+    {
+      "id": "cmv…",
+      "name": "Viernes",
+      "starts_at": "2026-11-20T20:00:00.000Z",
+      "ends_at": "2026-11-21T02:00:00.000Z",
+      "status": "ON_SALE",
+      "sort_order": 0,
+      "total_available": 412,
+      "from_price": 60000,
+      "sold_out": false
+    }
+  ]
+}
+```
+
+- `status` is `ON_SALE`, `SOLD_OUT` or `CANCELLED`. Hidden drafts never arrive.
+- When there are **several** dates, each one also carries `total_available`, `from_price` and
+  `sold_out`, so you can draw the selector ("sáb 21 · desde $60.000 · agotada") from this
+  payload alone.
+- `ticketAvailability[]` stays one row per ticket type × selling stage, **summed across the
+  dates**, until you ask for one date: `GET /api/events/public/{slug}?performance_id=…` returns
+  that date's stock, and each row's `performance_id` is set.
+
+## Selling for a date
+
+When the event has more than one date, every item you send must say which:
+
+```json
+{ "ticket_type_id": "…", "selling_stage_id": "…", "quantity": 2, "performance_id": "cmv…" }
+```
+
+This applies to holds and to `checkout/start`. An item without `performance_id` on a
+multi-date event is refused with `400 PERFORMANCE_REQUIRED`; guessing a date for a buyer is
+worse than asking. A date that is not on sale is `400 PERFORMANCE_NOT_ON_SALE`; an unknown one
+is `400 PERFORMANCE_NOT_FOUND`.
+
+For a single-date event, omit the field. It defaults to the event's only date.
+
+## Recommended UX
+
+1. Render the date selector above the tickets. Preselect nothing (a `?performance=` deep link
+   may). Mark `sold_out` and `CANCELLED` dates as disabled.
+2. On pick, re-fetch the event with `?performance_id=` so the ticket list shows that date's
+   stock, and clear the selection.
+3. Show the picked date (not `event.start_date`) in the header, the checkout summary and the
+   confirmation page.
+
+Tickets and the ticket email carry the date; the gate refuses a ticket scanned on another
+night.

@@ -1,0 +1,93 @@
+---
+title: "Numbered seating"
+description: "Seat maps: read the plan, show what is taken, let the buyer pick or take the best available"
+---
+
+A locality can be **numbered** (`locality.seating === "NUMBERED"`): its ticket types sell
+specific seats. General-admission localities (`"GENERAL"`, the default) are untouched by
+everything on this page.
+
+You can support numbered seating at two levels:
+
+- **Zero effort.** Send items without seats. The hold (or checkout) assigns the **best
+  available contiguous seats** for that ticket type: front rows first, never leaving a single
+  orphan seat. Tickets come back with a `seat_label` such as `Platea · Fila C · Silla 12`.
+- **A seat picker.** Read the plan, draw it, let the buyer click seats, send `seat_ids`.
+
+## Endpoints
+
+All three are public and need no authentication.
+
+| Verb | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/events/public/{slug}/seating` | The plan (sections, seats with x/y, zones with their ticket type) plus what is taken right now |
+| `GET` | `/api/events/public/{slug}/seating/occupancy?performance_id=…` | Just the taken seats, for polling |
+| `POST` | `/api/events/public/{slug}/seating/best-available` | Contiguous free seats for a ticket type, without reserving them |
+
+## The plan
+
+```json
+{
+  "chart": {
+    "id": "…", "name": "Teatro", "width": 1200, "height": 800,
+    "zones": [{ "key": "a", "name": "Platea", "color": "#2dd4bf", "ticket_type_id": "tt_…" }],
+    "sections": [{ "id": "sec_…", "name": "Platea", "zone_key": "a", "x": 600, "y": 200,
+                   "rotation": 0, "curve": 0, "elevation": 0, "tilt": 0,
+                   "rows_count": 12, "seats_per_row": 20 }],
+    "seats": [{ "id": "seat_…", "section_id": "sec_…", "row_label": "C", "seat_label": "12",
+                "x": 612, "y": 260, "zone_key": null, "accessible": false,
+                "restricted_view": false, "state": "AVAILABLE" }]
+  },
+  "performance_id": "…",
+  "taken": { "seat_…": "HELD", "seat_…": "SOLD" },
+  "as_of": "2026-10-17T21:00:00.000Z"
+}
+```
+
+- Coordinates are in chart units on a `width × height` canvas; draw seats as circles at
+  `(x, y)`. `elevation` and `tilt` exist for 3D renderings and can be ignored in 2D.
+- A seat's zone is `seat.zone_key ?? section.zone_key`. The zone's `ticket_type_id` is the
+  ticket type that sells it. Colour seats by zone.
+- `state` other than `AVAILABLE` (`BLOCKED`, `HOUSE`) is never sellable. `taken` lists seats
+  someone currently holds or bought for this performance; free seats are absent from it.
+- Poll `/seating/occupancy` every few seconds while the picker is open. Re-draw from `taken`.
+
+For a multi-date event pass `?performance_id=`; occupancy is per date.
+
+## Picking seats
+
+Add `seat_ids` to the item, exactly `quantity × group_size` of them, all in the zone of that
+ticket type:
+
+```json
+{ "ticket_type_id": "tt_…", "selling_stage_id": "…", "quantity": 2,
+  "seat_ids": ["seat_C12", "seat_C13"] }
+```
+
+The seats are claimed **inside the hold**, atomically with the stock. If someone else got one
+of them first you receive `409 SEAT_TAKEN` with `detail.seat_ids`: drop those seats, refresh
+occupancy, ask the buyer to pick again.
+
+Other seat errors are `400`: `SEAT_COUNT_MISMATCH` (wrong number of seats),
+`SEAT_NOT_IN_TICKET_TYPE` (a seat from another zone), `SEAT_NOT_SELLABLE` (blocked or house
+seat), `SEAT_NOT_FOUND`.
+
+## Best available
+
+```js
+const { seats } = await fetch(`${API}/api/events/public/${slug}/seating/best-available`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ ticket_type_id, count: 2 }), // + performance_id for multi-date events
+}).then((r) => r.json()).then((b) => b.data);
+// → [{ id, section_id, row_label, seat_label, ... }]
+```
+
+This only suggests; send the ids on the hold to claim them. Omitting `seat_ids` on the hold
+does the same thing in one step.
+
+## After the sale
+
+`checkout/status` tickets and the ticket email carry `seat_label`. A hold that changes seats
+at checkout (the buyer picked different ones) frees the old seats; cancelling an order frees
+its seats.

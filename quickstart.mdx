@@ -1,16 +1,18 @@
 ---
 title: "Quickstart"
-description: "End-to-end integration in ~50 lines of JavaScript"
+description: "End-to-end integration in ~60 lines of JavaScript: list, reserve, checkout, confirm"
 ---
 
 This walkthrough takes you from "blank page" to "buyer purchased a ticket"
-in three calls. All snippets are plain `fetch` — no SDK required.
+in four calls. All snippets are plain `fetch`; no SDK required.
 
 ## Prerequisites
 
 - Your **tenant `account_id`** (UUID) from UnderPass onboarding
 - The API base URL: `https://api.underpass.com.co`
   (dev: `https://api-dev.underpass.com.co`)
+- A **session key** per browser: an opaque string of 8 to 128 characters (a UUID in an
+  `httpOnly` cookie is ideal). It owns the buyer's reservation and waiting-room pass.
 
 ## 1. List events
 
@@ -53,12 +55,20 @@ async function getEvent(slug) {
   );
   if (!res.ok) throw new Error(`Get failed: ${res.status}`);
   const { data } = await res.json();
-  return data; // → { id, name, slug, ticket_types: [...], selling_stages: [...], ... }
+  return data; // → { id, name, slug, ticketAvailability: [...], performances: [...], ... }
 }
 ```
 
-Each `ticket_type` has an `id`, `name`, `price`, `available`, and `locality`
-info. Render the picker, let the buyer select quantities.
+`ticketAvailability[]` is **one row per ticket type × selling stage** that is on sale right
+now: `{ ticketType, sellingStage, stagePricing, available, reserved }`. Price is
+`stagePricing.price` (a decimal string, parse it), stock is `available` (already net of other
+buyers' reservations), and `ticketType.locality` tells you the section. Group rows by locality
+and render the picker.
+
+Three things the event may carry that change the picker: several `performances[]` (a date
+selector first, see [Multi-date events](/guides/performances)), a locality with
+`seating: "NUMBERED"` ([Numbered seating](/guides/seating)), and `waiting_room: true`
+([Waiting room](/guides/waiting-room)). An event with none of them works exactly as below.
 
 <Warning>
   Respect the purchase limits when rendering the picker: cap each ticket type's
@@ -67,20 +77,49 @@ info. Render the picker, let the buyer select quantities.
   enforced server-side at checkout start — bypassing the UI just earns a `400`.
 </Warning>
 
-## 3. Start checkout
+## 3. Reserve the selection
 
-After the buyer picks tickets + fills in their info, create the order:
+The moment the buyer continues with a selection, reserve it. The tickets are theirs for the
+event's hold window (`event.hold_minutes`, 10 by default) while they fill in the form, and
+nobody else can buy them.
 
 ```js
-async function startCheckout({ eventId, items, customer }) {
+async function reserve({ eventId, items }) {
+  const res = await fetch(`${API}/api/checkout/holds`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event_id: eventId,
+      session_key: SESSION_KEY,
+      items, // [{ ticket_type_id, selling_stage_id, quantity }]
+    }),
+  });
+  if (!res.ok) throw new Error(`Reserve failed: ${res.status}`);
+  const { data } = await res.json();
+  return data; // → { id, status: "ACTIVE", expires_at, items: [...] }
+}
+```
+
+Show a countdown from `expires_at`. A `400 INSUFFICIENT_TICKETS` here is the right moment to
+tell the buyer, not after they typed their details. Details in [Reservations](/guides/reservations).
+
+## 4. Start checkout
+
+After the form, create the order with the hold:
+
+```js
+async function startCheckout({ eventId, items, customer, holdId }) {
   const res = await fetch(`${API}/api/checkout/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      account_id: ACCOUNT_ID,
       event_id: eventId,
-      items, // [{ ticket_type_id, quantity }]
+      items, // the same [{ ticket_type_id, selling_stage_id, quantity }]
       customer, // { email, name, phone, document_type, document_number }
+      accept_terms: true,
+      hold_id: holdId,
+      success_url: "https://your.site/orders/confirm",
+      cancel_url: "https://your.site/orders/cancelled",
     }),
   });
   if (!res.ok) throw new Error(`Checkout failed: ${res.status}`);
@@ -89,21 +128,22 @@ async function startCheckout({ eventId, items, customer }) {
 }
 ```
 
-A `400` here carries a machine `code` you should surface to the buyer instead
-of a generic failure — notably `INSUFFICIENT_TICKETS` (inventory ran out),
-`MAX_PER_ORDER_EXCEEDED` / `MAX_TICKETS_PER_ORDER_EXCEEDED` (per-order purchase
-limits), and `MAX_TICKETS_PER_EMAIL_EXCEEDED` (the email already holds the
-maximum tickets allowed for this event). See the API reference for the
+An error here carries a machine `code` you should surface to the buyer instead of a
+generic failure: `409 HOLD_EXPIRED` (the reservation ran out: back to the picker),
+`400 INSUFFICIENT_TICKETS`, `MAX_PER_ORDER_EXCEEDED` / `MAX_TICKETS_PER_ORDER_EXCEEDED`
+(per-order limits), `MAX_TICKETS_PER_EMAIL_EXCEEDED` (the email already holds the maximum for
+this event), `ATTENDEE_COUNT_MISMATCH`. See the API reference for the
 `{ code, message, detail }` error shape.
 
-Redirect the buyer to `redirect_url`. They pay on the provider's hosted
-checkout page (Bold). When done, they land back on a URL you provide
-(`success_url` / `cancel_url` — see the API reference for the full payload).
+Redirect the buyer to `redirect_url`. They pay on the provider's hosted checkout page (Bold
+or ePayco, whichever the organizer uses) and land back on your `success_url` or
+`cancel_url`. The order total includes the buyer-facing service fee; see
+[Fees & installments](/guides/fees-and-installments).
 
 If `total_amount === 0` (courtesy / fully discounted), there's no payment
 step — `redirect_url` will be your confirmation URL directly.
 
-## 4. Poll order status
+## 5. Poll order status
 
 After the buyer returns from the payment page, you don't know yet if the
 payment cleared. Poll the status endpoint until it resolves:
@@ -114,31 +154,30 @@ async function pollOrder(orderId, { intervalMs = 2000, maxAttempts = 30 } = {}) 
     const res = await fetch(`${API}/api/checkout/status/${orderId}`);
     if (!res.ok) throw new Error(`Status failed: ${res.status}`);
     const { data } = await res.json();
-    if (
-      data.status === "confirmed" ||
-      data.status === "partially_paid" ||
-      data.status === "cancelled" ||
-      data.status === "failed"
-    ) {
+    if (["CONFIRMED", "PARTIALLY_PAID", "CANCELLED", "EXPIRED"].includes(data.status)) {
       return data;
     }
     await new Promise((r) => setTimeout(r, intervalMs));
   }
-  return { status: "pending" }; // give up — show "we'll email you when it confirms"
+  return { status: "PENDING" }; // give up: show "te avisamos por correo cuando confirme"
 }
 ```
 
-Tickets are emailed by UnderPass automatically when the order confirms — you
-don't need to deliver them yourself.
+`CONFIRMED` and `PARTIALLY_PAID` (first installment paid) are both a sale. Tickets are
+emailed by UnderPass when the order is fully paid; you never deliver them yourself.
 
 ## End-to-end
 
 ```js
 const events = await listEvents();
 const event = await getEvent(events[0].slug);
+const row = event.ticketAvailability[0];
+const items = [{ ticket_type_id: row.ticketType.id, selling_stage_id: row.sellingStage.id, quantity: 2 }];
+const hold = await reserve({ eventId: event.id, items });
 const session = await startCheckout({
   eventId: event.id,
-  items: [{ ticket_type_id: event.ticket_types[0].id, quantity: 2 }],
+  items,
+  holdId: hold.id,
   customer: {
     email: "buyer@example.com",
     name: "Jane Buyer",
@@ -150,13 +189,16 @@ const session = await startCheckout({
 window.location.href = session.redirect_url;
 // ... buyer pays, returns to your `success_url` with `?order_id=...`
 const result = await pollOrder(session.order_id);
-console.log(result.status); // "confirmed"
+console.log(result.status); // "CONFIRMED"
 ```
 
 ## Optional features
 
-These slot into the same flow whenever the event has them enabled. Skip
-the ones your tenants don't use.
+These slot into the same flow whenever the event has them enabled. Skip the ones your tenants
+don't use. Each has its own guide: [multi-date events](/guides/performances),
+[numbered seating](/guides/seating), [waiting room](/guides/waiting-room),
+[group tickets & attendees](/guides/group-tickets-and-attendees), [bar perks](/guides/bar-perks),
+[installments](/guides/fees-and-installments), [marketing attribution](/guides/attribution).
 
 ### Promo codes
 
@@ -241,8 +283,8 @@ attribution.
   <Card title="Full API reference" icon="code" href="/api-reference/introduction">
     Every payload field, every response shape, every error code.
   </Card>
-  <Card title="Identity & scoping" icon="shield" href="/#identity-and-scoping">
-    How `account_id`, ticket IDs, and (optionally) API keys gate access.
+  <Card title="Analytics pixels" icon="chart-line" href="/analytics-pixels">
+    Required: the funnel events that make ad attribution work.
   </Card>
 </CardGroup>
 

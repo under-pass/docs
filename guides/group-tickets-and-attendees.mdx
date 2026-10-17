@@ -1,0 +1,67 @@
+---
+title: "Group tickets & attendees"
+description: "Tickets that admit several people, and who each ticket is issued to"
+---
+
+## Group tickets
+
+A ticket type with `group_size > 1` admits that many people per unit (a table for 4, a 2-for-1).
+Everywhere the API counts tickets it multiplies: `quantity` is in units, and the tickets
+locked, generated and counted against limits are `quantity × group_size`.
+
+- `event.max_tickets_per_order` and `max_tickets_per_email` cap **tickets**, not units.
+- `ticket_type.max_per_order` caps **units** of that ticket type.
+- Holds report both: `quantity` and `ticket_count`.
+
+Label the picker accordingly ("Mesa para 4 · $400.000") so the buyer understands what one
+unit buys.
+
+## Who gets the tickets
+
+By default every ticket of an order is issued to the buyer (`customer`) and the ticket email
+goes to them. Two things change that.
+
+### `attendees` on an item
+
+Send one attendee per **generated ticket**, exactly `quantity × group_size` of them, in order:
+
+```json
+{
+  "ticket_type_id": "tt_…", "selling_stage_id": "…", "quantity": 1,
+  "attendees": [
+    { "full_name": "Ana Pérez", "email": "ana@example.com", "document_type": "CC", "document_number": "1001", "phone": "+573001112233" },
+    { "full_name": "Luis Gómez", "email": "luis@example.com" }
+  ]
+}
+```
+
+Each ticket is then issued to its attendee: holder email, check-in data and QR email. The
+buyer still receives the order confirmation. `full_name` and a valid `email` are required;
+`document_type`, `document_number` and `phone` are optional. A list of the wrong length is
+`400 ATTENDEE_COUNT_MISMATCH`.
+
+This is how a storefront offers the choice on a group ticket:
+
+| Option | What to send |
+| --- | --- |
+| "Todas las entradas a mi nombre" | No `attendees`. Every ticket goes to the buyer. |
+| "Cada entrada a una persona" | `attendees` with one entry per ticket. |
+
+### `require_individual_data` on the event
+
+When the event sets it, **every** ticket needs its attendee: the form must collect
+`quantity × group_size` attendee blocks per item (all fields filled) and send them as
+`attendees`. Checkout without them is refused.
+
+### `requires_info` on the ticket type
+
+Independent of the above: a ticket type with `requires_info: true` asks the holder to complete
+their check-in data (name, document) before the gate. UnderPass collects it in the ticket
+email / tickets app; your storefront does not need to.
+
+## Document types
+
+`POST /api/checkout/allowed-document-types` with the `ticket_type_ids` in the cart returns the
+intersection of the localities' allow-lists. Only offer those in the `customer.document_type`
+selector; an empty list means the cart mixes localities with incompatible rules and cannot be
+bought as one order.
