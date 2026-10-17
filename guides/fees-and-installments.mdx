@@ -1,0 +1,63 @@
+---
+title: "Fees & installments"
+description: "The buyer-facing service fee, how it is computed per payment, and split payments"
+---
+
+## The ticket fee
+
+`event.ticket_commission_rate` is the **buyer-facing service fee**, as a percentage of the
+ticket subtotal (after discounts), charged on top of the ticket price. It comes from the
+organizer's account rate or a per-event override, and it is the only number your storefront
+should use for fee math. Rate `0` means no fee.
+
+```text
+service_fee = round(subtotal × ticket_commission_rate / 100)
+total       = subtotal + service_fee
+```
+
+All amounts are **integer COP**. The `processing_fee_rate` field on the same payload is
+informational and must not drive any price you display.
+
+Show the fee as its own line ("Tarifa de servicio") before the buyer submits, and compute it
+exactly as above, or the amount you display will differ from the amount the payment page
+charges. `checkout/start` returns `total_amount` (subtotal + fee); use that for the
+`InitiateCheckout` pixel value.
+
+## Split payments (cuotas)
+
+When `event.allows_split_payment` is true the buyer may pay in `installment_count` payments
+(1 to `event.max_payment_count`). The first payment is at least
+`event.min_initial_payment_pct` of the subtotal, or the even share, whichever is larger; the
+rest splits evenly. **The fee is computed per payment**, each rounded on its own base, so the
+sum can differ from `round(subtotal × rate)` by a peso or two; that is expected.
+
+```js
+function installments(subtotal, rate, n, minFirstPct) {
+  const fee = (base) => (rate > 0 ? Math.round((base * rate) / 100) : 0);
+  if (n === 1) return [{ base: subtotal, fee: fee(subtotal) }];
+  const firstPct = Math.max(minFirstPct, Math.ceil(100 / n));
+  const first = Math.round((subtotal * firstPct) / 100);
+  const each = Math.round((subtotal - first) / (n - 1));
+  return [
+    { base: first, fee: fee(first) },
+    ...Array.from({ length: n - 1 }, () => ({ base: each, fee: fee(each) })),
+  ];
+}
+```
+
+The payment page charges the **first** installment now; `checkout/start` still returns the
+full `total_amount`. Fewer installments means lower total fees; say so.
+
+### Order status with installments
+
+`GET /api/checkout/status/{orderId}` reports `PARTIALLY_PAID` after the first payment, with
+`paid_amount`, `remaining_amount`, `total_installments`, `paid_installments` and the
+`payments[]` list. Treat `PARTIALLY_PAID` as a successful purchase for the confirmation page
+and the `Purchase` pixel: the tickets' inventory is secured at the first payment. The tickets
+themselves are issued when the order is fully paid (`CONFIRMED`).
+
+## Free orders
+
+A `total_amount` of `0` (courtesy codes, 100% discounts) skips the payment page:
+`payment_provider` is `"FREE"` and `redirect_url` is your confirmation URL. Tickets are issued
+immediately.

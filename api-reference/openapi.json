@@ -2,8 +2,8 @@
   "openapi": "3.0.0",
   "info": {
     "title": "UnderPass Public API",
-    "version": "1.0.0",
-    "description": "Public API for browsing events and starting ticket purchases on the UnderPass platform. Use this to build a custom event landing or checkout experience on your own domain. All endpoints are scoped by `account_id` (your tenant's UUID, provided during onboarding).",
+    "version": "1.3.0",
+    "description": "Public API for browsing events and selling tickets on the UnderPass platform. Build a custom event landing or checkout on your own domain: list events, reserve tickets at selection, sell numbered seats, run a waiting room, start a checkout and poll the order. Everything added since 1.0 is optional and opt-in per event; a storefront built against 1.0 keeps working.",
     "contact": {
       "name": "UnderPass Engineering",
       "email": "developers@underpass.com.co",
@@ -158,11 +158,12 @@
           },
           {
             "name": "unlocked_stages",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Comma-separated stage ids (or `stageId:ticketTypeId`) unlocked by a promo code."
           },
           {
             "name": "include_artists",
@@ -177,6 +178,15 @@
             "in": "query",
             "description": "Include ticket information (default: true)",
             "schema": {}
+          },
+          {
+            "name": "performance_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Narrow `ticketAvailability` to one date. Without it the rows are summed across the event's dates."
           }
         ],
         "responses": {
@@ -211,6 +221,544 @@
         "tags": [
           "Events"
         ]
+      }
+    },
+    "/api/events/public/{slug}/seating": {
+      "get": {
+        "tags": [
+          "Events"
+        ],
+        "summary": "Seat map of a published event",
+        "operationId": "getPublicSeating",
+        "description": "The chart (zones with their ticket type, sections, seats with coordinates) plus the seats currently taken for the performance. 404 when the event has no numbered seating.",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "performance_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required on multi-date events."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The plan and occupancy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSeatingDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`EVENT_NOT_FOUND` / `SEATING_CHART_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events/public/{slug}/seating/occupancy": {
+      "get": {
+        "tags": [
+          "Events"
+        ],
+        "summary": "Seats taken right now",
+        "operationId": "getPublicSeatOccupancy",
+        "description": "For polling while the picker is open.",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "performance_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required on multi-date events."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Occupancy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeatOccupancyDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`EVENT_NOT_FOUND` / `SEATING_CHART_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events/public/{slug}/seating/best-available": {
+      "post": {
+        "tags": [
+          "Events"
+        ],
+        "summary": "Best available contiguous seats for a ticket type",
+        "operationId": "bestAvailableSeats",
+        "description": "Suggests seats without reserving them: same row, front rows first, never leaving a single orphan seat. Send the ids on the hold to claim them.",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BestAvailableDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Seats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SeatDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`INSUFFICIENT_TICKETS`: not enough free seats; `TICKET_TYPE_HAS_NO_ZONE`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`EVENT_NOT_FOUND` / `SEATING_CHART_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkout/holds": {
+      "post": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Reserve a ticket selection",
+        "operationId": "createHold",
+        "description": "Sets the selected tickets aside for the session for the event's hold window (`event.hold_minutes`); they leave everyone else's `available`. Replaces the session's previous hold on this event. On a NUMBERED locality without `seat_ids` the best available contiguous seats are assigned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHoldDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Reserved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`INSUFFICIENT_TICKETS` (with `detail.available`, `detail.reserved_by_others`), `PERFORMANCE_REQUIRED`, `SEAT_COUNT_MISMATCH`, `SEAT_NOT_IN_TICKET_TYPE`, `SEAT_NOT_SELLABLE`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`QUEUE_PASS_REQUIRED` / `QUEUE_PASS_INVALID` (waiting room)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`SEAT_TAKEN` (`detail.seat_ids`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkout/holds/{id}": {
+      "get": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Read a hold",
+        "operationId": "getHold",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The hold (expired if its window ran out)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`HOLD_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Change the reserved quantities (the window restarts)",
+        "operationId": "updateHold",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHoldDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`INSUFFICIENT_TICKETS`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`HOLD_NOT_FOUND` (also when the session key does not match)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`HOLD_EXPIRED` / `HOLD_NOT_ACTIVE`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Give the reservation back",
+        "operationId": "releaseHold",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session_key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The session key that owns the entry."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Released",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`HOLD_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkout/queue": {
+      "post": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Join (or return to) an event's waiting room",
+        "operationId": "joinQueue",
+        "description": "Admits on the spot when the doors are open and the minute's budget allows; otherwise returns the place in line. The entry id is the pass to send as `queue_pass` once ADMITTED. An expired or left entry re-joins at the back.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JoinQueueDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "In line, or admitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueEntryDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`QUEUE_NOT_ENABLED`: the event has no waiting room",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`EVENT_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkout/queue/{id}": {
+      "get": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Poll a place in line",
+        "operationId": "getQueueEntry",
+        "description": "Also what moves the line: admission happens when someone polls. Poll every 4 to 5 seconds while WAITING; an entry unseen for 2 minutes is dropped.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session_key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The session key that owns the entry."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current place",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueEntryDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`QUEUE_ENTRY_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Leave the line",
+        "operationId": "leaveQueue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session_key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The session key that owns the entry."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Left",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueEntryDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`QUEUE_ENTRY_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/checkout/allowed-document-types": {
@@ -256,10 +804,30 @@
             }
           },
           "400": {
-            "description": "Invalid request, tickets not available, or a purchase limit was exceeded (`INSUFFICIENT_TICKETS`, `MAX_PER_ORDER_EXCEEDED`, `MAX_TICKETS_PER_ORDER_EXCEEDED`, `MAX_TICKETS_PER_EMAIL_EXCEEDED`)"
+            "description": "Invalid request or a rule failed: `INSUFFICIENT_TICKETS`, `MAX_PER_ORDER_EXCEEDED`, `MAX_TICKETS_PER_ORDER_EXCEEDED`, `MAX_TICKETS_PER_EMAIL_EXCEEDED`, `PERFORMANCE_REQUIRED`, `ATTENDEE_COUNT_MISMATCH`, `SEAT_COUNT_MISMATCH`, `BAR_PERK_*`, `TERMS_NOT_ACCEPTED`"
           },
           "404": {
             "description": "Event not found"
+          },
+          "403": {
+            "description": "`QUEUE_PASS_REQUIRED` / `QUEUE_PASS_INVALID`: the event has a waiting room and the order carries neither a hold nor an admitted pass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`HOLD_EXPIRED` / `HOLD_NOT_ACTIVE`: the reservation ran out; `SEAT_TAKEN`: a picked seat was taken meanwhile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
           }
         },
         "summary": "Start a checkout session",
@@ -426,12 +994,27 @@
           },
           "quantity": {
             "type": "number",
-            "description": "Quantity of tickets",
+            "description": "Units of the ticket type. Tickets generated = quantity × group_size.",
             "minimum": 1
           },
-          "discount_code": {
+          "performance_id": {
             "type": "string",
-            "description": "Discount code to apply"
+            "description": "Required on every item when the event has several dates (`PERFORMANCE_REQUIRED` otherwise). Omit for single-date events."
+          },
+          "seat_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Numbered seating: the seats to buy, exactly quantity × group_size, all in the zone of this ticket type. Omitted on a NUMBERED locality = best available contiguous seats (or the hold's seats).",
+            "maxItems": 200
+          },
+          "attendees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckoutAttendeeDto"
+            },
+            "description": "One attendee per generated ticket (quantity × group_size, in order). Each ticket is then issued and emailed to its attendee. Required when the event has `require_individual_data`. Wrong length = `ATTENDEE_COUNT_MISMATCH`."
           }
         },
         "required": [
@@ -454,9 +1037,10 @@
           },
           "payment_provider": {
             "type": "string",
-            "description": "Payment provider used",
+            "description": "`bold` / `epayco` = redirect to the hosted payment page; `FREE` = zero-amount order, `redirect_url` is your confirmation URL.",
             "enum": [
               "bold",
+              "epayco",
               "FREE"
             ]
           },
@@ -466,7 +1050,7 @@
           },
           "total_amount": {
             "type": "number",
-            "description": "Order total amount - 0 for free orders"
+            "description": "Order total in integer COP: ticket subtotal after discounts, plus bar perks, plus the buyer-facing service fee. Use it as the InitiateCheckout pixel value."
           },
           "currency": {
             "type": "string",
@@ -496,10 +1080,11 @@
           },
           "status": {
             "type": "string",
-            "description": "Order status",
+            "description": "`CONFIRMED` = fully paid, tickets issued. `PARTIALLY_PAID` = first installment paid: count it as a sale (fire Purchase once), tickets issued when fully paid.",
             "enum": [
               "PENDING",
               "CONFIRMED",
+              "PARTIALLY_PAID",
               "EXPIRED",
               "CANCELLED"
             ]
@@ -515,21 +1100,111 @@
           },
           "total_amount": {
             "type": "number",
-            "description": "Total amount in cents"
+            "description": "Integer COP."
           },
           "paid_amount": {
             "type": "number",
-            "description": "Amount paid in cents"
+            "description": "Integer COP paid so far."
           },
           "currency": {
             "type": "string",
             "description": "Currency code"
           },
           "tickets": {
-            "description": "Tickets generated (if payment completed)",
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "ticket_type": {
+                  "type": "string"
+                },
+                "qr_code": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "seat_label": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Numbered seating: \"Platea · Fila C · Silla 12\"."
+                }
+              }
+            },
+            "description": "Present once tickets are issued."
+          },
+          "remaining_amount": {
+            "type": "number",
+            "description": "Integer COP still owed (installments)."
+          },
+          "total_installments": {
+            "type": "integer"
+          },
+          "paid_installments": {
+            "type": "integer"
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "number"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "event": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "start_date": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "location": {
+                "type": "object",
+                "properties": {
+                  "venue": {
+                    "type": "string"
+                  },
+                  "city": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "customer": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
             }
           }
         },
@@ -637,15 +1312,16 @@
           },
           "payment_provider": {
             "type": "string",
-            "enum": [
-              "bold"
-            ],
-            "description": "Only present on the by-slug endpoint, not on the list response."
+            "description": "Active PSP of the organizer: `bold` or `epayco`. The hosted payment page is theirs.",
+            "example": "bold"
           },
           "pixelIntegration": {
-            "$ref": "#/components/schemas/PixelIntegrationDto",
-            "nullable": true,
-            "description": "Pixel + analytics tag IDs for client-side initialization. May be `null` when the organizer has no pixels configured. NEVER includes server-side secrets (e.g. Meta CAPI tokens) — those stay on the UnderPass backend."
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PixelIntegrationDto"
+              }
+            ],
+            "nullable": true
           },
           "created_at": {
             "type": "string",
@@ -696,17 +1372,48 @@
             "items": {
               "$ref": "#/components/schemas/TicketAvailabilityDto"
             },
-            "description": "Denormalized \"what to render right now\" — already filtered to currently-purchasable rows. Use this directly in the ticket picker."
+            "description": "One row per ticket type × selling stage on sale now. Summed across performances unless `?performance_id=` narrows it."
           },
           "processing_fee_rate": {
             "type": "number",
-            "description": "Bold processing fee rate (percentage). Only present on the by-slug endpoint. Use this in the checkout summary to render the buyer-paid service fee breakdown.",
-            "example": 0.85
+            "description": "Informational. Do not derive any buyer-facing price from it."
           },
           "ticket_commission_rate": {
             "type": "number",
-            "description": "Ticket commission rate (percentage) applied to the buyer at checkout in addition to processing fees. Only present on the by-slug endpoint.",
-            "example": 0
+            "description": "Buyer-facing service fee as a percentage of the ticket subtotal, charged on top. The only rate to use for fee math. 0 = no fee. See Fees & installments.",
+            "example": 5
+          },
+          "hold_minutes": {
+            "type": "integer",
+            "description": "Minutes a reservation (`POST /api/checkout/holds`) stays active before checkout. Default 10.",
+            "example": 10
+          },
+          "waiting_room": {
+            "type": "boolean",
+            "description": "When true, `POST /api/checkout/holds` (and `checkout/start` without `hold_id`) require an admitted `queue_pass` from `/api/checkout/queue`."
+          },
+          "waiting_room_opens_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Doors-open time of the waiting room. Before it buyers pre-queue and are drawn at random at opening. `null` = open from the start (only paces the flow)."
+          },
+          "waiting_room_rate": {
+            "type": "integer",
+            "description": "Admissions per minute.",
+            "example": 60
+          },
+          "waiting_room_minutes": {
+            "type": "integer",
+            "description": "Minutes an admitted pass stays valid.",
+            "example": 10
+          },
+          "performances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PerformanceDto"
+            },
+            "description": "The event's dates (\"funciones\"). Hidden drafts are never included. With several dates each carries `total_available`, `from_price`, `sold_out`; every item then needs `performance_id`."
           }
         }
       },
@@ -804,7 +1511,7 @@
           },
           "installment_count": {
             "type": "number",
-            "description": "Number of installments (1 = full payment, 2+ = split payments)",
+            "description": "1 = pay in full; 2+ = split payment (requires `event.allows_split_payment`, max `event.max_payment_count`). The first installment is charged now; the fee is computed per installment.",
             "default": 1,
             "minimum": 1,
             "maximum": 12
@@ -822,12 +1529,31 @@
             "description": "Referral code for referral attribution"
           },
           "tracking": {
-            "description": "Meta CAPI enhanced matching data",
+            "description": "Marketing attribution and ad-platform matching data captured in the browser. See the Marketing attribution guide.",
             "allOf": [
               {
                 "$ref": "#/components/schemas/TrackingDataDto"
               }
             ]
+          },
+          "bar_perks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckoutBarPerkDto"
+            },
+            "description": "Purchasable bar perks the buyer accepted. Price is read server-side; perks priced 0 are rejected (`BAR_PERK_NOT_PURCHASABLE`)."
+          },
+          "sales_link_code": {
+            "type": "string",
+            "description": "The sales link the buyer arrived with, so private tiers it unlocks are authorized at checkout, not only shown."
+          },
+          "hold_id": {
+            "type": "string",
+            "description": "The reservation made with `POST /api/checkout/holds`. The order takes it over (no second fight for the stock). Without it the order reserves inline at this moment."
+          },
+          "queue_pass": {
+            "type": "string",
+            "description": "Waiting-room pass (admitted entry id). Only needed on an event with `waiting_room` when there is no `hold_id`; a hold already went through the line."
           }
         },
         "required": [
@@ -842,11 +1568,11 @@
         "properties": {
           "fbc": {
             "type": "string",
-            "description": "Meta fbc cookie value"
+            "description": "Meta `_fbc` cookie (or `fb.1.<ts>.<fbclid>` built from the click id)"
           },
           "fbp": {
             "type": "string",
-            "description": "Meta fbp cookie value"
+            "description": "Meta `_fbp` cookie"
           },
           "client_user_agent": {
             "type": "string",
@@ -854,7 +1580,59 @@
           },
           "client_ip_address": {
             "type": "string",
-            "description": "Client IP address"
+            "description": "The buyer's public IP. When you call the API from a server, forward it from your edge; private addresses are dropped."
+          },
+          "utm_source": {
+            "type": "string",
+            "description": "First-touch UTM source"
+          },
+          "utm_medium": {
+            "type": "string",
+            "description": "First-touch UTM medium"
+          },
+          "utm_campaign": {
+            "type": "string",
+            "description": "First-touch UTM campaign"
+          },
+          "utm_content": {
+            "type": "string",
+            "description": "First-touch UTM content"
+          },
+          "utm_term": {
+            "type": "string",
+            "description": "First-touch UTM term"
+          },
+          "gclid": {
+            "type": "string",
+            "description": "Google click id"
+          },
+          "fbclid": {
+            "type": "string",
+            "description": "Meta click id from the landing URL"
+          },
+          "ttclid": {
+            "type": "string",
+            "description": "TikTok click id (`?ttclid=`), keep 30 days"
+          },
+          "ttp": {
+            "type": "string",
+            "description": "Value of the TikTok `_ttp` cookie"
+          },
+          "referrer": {
+            "type": "string",
+            "description": "`document.referrer` on first touch"
+          },
+          "landing_page": {
+            "type": "string",
+            "description": "Full landing URL on first touch"
+          },
+          "channel": {
+            "type": "string",
+            "description": "Your derived channel bucket (`paid_social`, `organic_search`, `direct`, …). Optional."
+          },
+          "up_aid": {
+            "type": "string",
+            "description": "Reserved for UnderPass storefronts; do not send."
           }
         }
       },
@@ -1154,6 +1932,14 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "seating": {
+            "type": "string",
+            "enum": [
+              "GENERAL",
+              "NUMBERED"
+            ],
+            "description": "`NUMBERED`: this locality's ticket types sell specific seats (see the seating endpoints). Default `GENERAL`."
           }
         }
       },
@@ -1179,7 +1965,7 @@
           },
           "group_size": {
             "type": "integer",
-            "description": "Number of attendees per ticket (1 = single, 2 = 2-for-1, etc.)."
+            "description": "People admitted per unit (1 = single ticket, 4 = a table for four). Everything the API counts multiplies `quantity × group_size`."
           },
           "max_per_order": {
             "type": "integer",
@@ -1223,6 +2009,29 @@
           },
           "locality": {
             "$ref": "#/components/schemas/LocalityDto"
+          },
+          "entry_cutoff": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Time-restricted ticket: the holder must enter before this time; a later scan is flagged as a late arrival at the gate. Informational, show it before purchase."
+          },
+          "late_fee": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Integer COP the organizer charges a late arrival at the door. Informational."
+          },
+          "min_consumption": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Integer COP minimum spend the organizer collects at the door. Informational."
+          },
+          "barPerks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TicketBarPerkDto"
+            },
+            "description": "What the ticket gives at the bar. `price: 0` = included; `price > 0` = purchasable add-on (send it in `bar_perks` at checkout)."
           }
         }
       },
@@ -1351,7 +2160,7 @@
           },
           "available": {
             "type": "integer",
-            "description": "Remaining units for THIS ticket type. Render \"Agotado\" badge when `<= 0`."
+            "description": "Sellable right now: stock minus what other buyers currently hold (carts and unpaid orders). Render \"Agotado\" when `<= 0`; held tickets come back when those holds expire."
           },
           "maxQuantity": {
             "type": "integer",
@@ -1359,6 +2168,15 @@
           },
           "stagePricing": {
             "$ref": "#/components/schemas/StagePricingDto"
+          },
+          "reserved": {
+            "type": "integer",
+            "description": "Tickets other buyers are holding at this moment."
+          },
+          "performance_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The date these numbers are for; `null` when summed across several dates."
           }
         }
       },
@@ -1413,6 +2231,650 @@
           "total_pages": {
             "type": "integer",
             "example": 1
+          }
+        }
+      },
+      "PerformanceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ON_SALE",
+              "SOLD_OUT",
+              "CANCELLED"
+            ]
+          },
+          "sort_order": {
+            "type": "integer"
+          },
+          "total_available": {
+            "type": "integer",
+            "description": "Only when the event has several dates."
+          },
+          "from_price": {
+            "type": "number",
+            "nullable": true,
+            "description": "Lowest sellable price for this date; only with several dates."
+          },
+          "sold_out": {
+            "type": "boolean",
+            "description": "Only with several dates."
+          }
+        }
+      },
+      "TicketBarPerkDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "ticket_type_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "product",
+              "bundle",
+              "credit"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "bundle_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "credit_amount": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Integer COP, for `kind = credit`."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "How many of the product/combo one ticket earns. Ignored for credit."
+          },
+          "price": {
+            "type": "integer",
+            "description": "Integer COP the buyer pays for this perk. 0 = already inside the ticket."
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "optional": {
+            "type": "boolean",
+            "description": "A purchasable perk the buyer may decline. Always false when price is 0."
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CheckoutAttendeeDto": {
+        "type": "object",
+        "required": [
+          "full_name",
+          "email"
+        ],
+        "properties": {
+          "full_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "document_type": {
+            "type": "string"
+          },
+          "document_number": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        }
+      },
+      "CheckoutBarPerkDto": {
+        "type": "object",
+        "required": [
+          "perk_id",
+          "count"
+        ],
+        "properties": {
+          "perk_id": {
+            "type": "string",
+            "description": "A `barPerks[].id` with `price > 0`."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Capped server-side at the tickets of that ticket type in the order.",
+            "minimum": 1
+          }
+        }
+      },
+      "HoldItemInputDto": {
+        "type": "object",
+        "required": [
+          "ticket_type_id",
+          "selling_stage_id",
+          "quantity"
+        ],
+        "properties": {
+          "ticket_type_id": {
+            "type": "string"
+          },
+          "selling_stage_id": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Units; tickets locked = quantity × group_size.",
+            "minimum": 1
+          },
+          "performance_id": {
+            "type": "string",
+            "description": "Required on multi-date events."
+          },
+          "seat_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Numbered seating: seats to claim, quantity × group_size. Omitted = best available.",
+            "maxItems": 200
+          }
+        }
+      },
+      "CreateHoldDto": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "session_key",
+          "items"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string",
+            "description": "Opaque per-browser id, 8 to 128 characters. Owns the hold; one ACTIVE hold per session per event (a new POST replaces it).",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HoldItemInputDto"
+            },
+            "description": "1 to 20 items.",
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "queue_pass": {
+            "type": "string",
+            "description": "Waiting-room pass, required when the event has `waiting_room`."
+          }
+        }
+      },
+      "UpdateHoldDto": {
+        "type": "object",
+        "required": [
+          "session_key",
+          "items"
+        ],
+        "properties": {
+          "session_key": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HoldItemInputDto"
+            }
+          }
+        }
+      },
+      "HoldDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Send as `hold_id` on `checkout/start`."
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "CONVERTED",
+              "CONSUMED",
+              "RELEASED",
+              "EXPIRED"
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Show a countdown; at zero the tickets are back on sale."
+          },
+          "order_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ticket_type_id": {
+                  "type": "string"
+                },
+                "selling_stage_id": {
+                  "type": "string"
+                },
+                "performance_id": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "quantity": {
+                  "type": "integer"
+                },
+                "ticket_count": {
+                  "type": "integer",
+                  "description": "quantity × group_size"
+                },
+                "seat_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "seat_labels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "JoinQueueDto": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "session_key"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string",
+            "description": "Same session key as the holds.",
+            "minLength": 8,
+            "maxLength": 128
+          }
+        }
+      },
+      "QueueEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The pass: send as `queue_pass` once `status` is ADMITTED."
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "WAITING",
+              "ADMITTED",
+              "EXPIRED",
+              "LEFT"
+            ]
+          },
+          "position": {
+            "type": "integer",
+            "nullable": true,
+            "description": "1-based place in line; null while pre-queuing (drawn at opening) or not waiting."
+          },
+          "waiting_ahead": {
+            "type": "integer",
+            "nullable": true
+          },
+          "estimated_minutes": {
+            "type": "integer",
+            "nullable": true
+          },
+          "open": {
+            "type": "boolean",
+            "description": "Doors open (admission running)?"
+          },
+          "opens_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "admitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "pass_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "rate": {
+            "type": "integer",
+            "description": "Admissions per minute."
+          }
+        }
+      },
+      "SeatingZoneDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chart_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "description": "Hex colour the organizer picked for the zone."
+          },
+          "ticket_type_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The ticket type that sells this zone's seats."
+          }
+        }
+      },
+      "SeatingSectionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chart_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer"
+          },
+          "zone_key": {
+            "type": "string",
+            "nullable": true
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "rotation": {
+            "type": "number",
+            "description": "Degrees"
+          },
+          "curve": {
+            "type": "number"
+          },
+          "elevation": {
+            "type": "number",
+            "description": "For 3D renderings; ignore in 2D"
+          },
+          "tilt": {
+            "type": "number"
+          },
+          "rows_count": {
+            "type": "integer"
+          },
+          "seats_per_row": {
+            "type": "integer"
+          },
+          "row_labels": {
+            "type": "string",
+            "enum": [
+              "alpha",
+              "numeric"
+            ]
+          },
+          "seat_numbering": {
+            "type": "string",
+            "enum": [
+              "sequential",
+              "odd_even"
+            ]
+          },
+          "seat_spacing": {
+            "type": "number"
+          },
+          "row_spacing": {
+            "type": "number"
+          }
+        }
+      },
+      "SeatDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "section_id": {
+            "type": "string"
+          },
+          "row_label": {
+            "type": "string"
+          },
+          "seat_label": {
+            "type": "string"
+          },
+          "x": {
+            "type": "number",
+            "description": "Chart units on a width × height canvas"
+          },
+          "y": {
+            "type": "number"
+          },
+          "zone_key": {
+            "type": "string",
+            "nullable": true,
+            "description": "Overrides the section's zone when set."
+          },
+          "accessible": {
+            "type": "boolean"
+          },
+          "restricted_view": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "AVAILABLE",
+              "BLOCKED",
+              "HOUSE"
+            ]
+          }
+        }
+      },
+      "SeatingChartDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "venue_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SeatingZoneDto"
+            }
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SeatingSectionDto"
+            }
+          },
+          "seats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SeatDto"
+            }
+          }
+        }
+      },
+      "SeatOccupancyDto": {
+        "type": "object",
+        "properties": {
+          "performance_id": {
+            "type": "string"
+          },
+          "taken": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "HELD",
+                "SOLD",
+                "BLOCKED"
+              ]
+            },
+            "description": "`seat_id` → status. Free seats are absent."
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PublicSeatingDto": {
+        "type": "object",
+        "properties": {
+          "chart": {
+            "$ref": "#/components/schemas/SeatingChartDto"
+          },
+          "performance_id": {
+            "type": "string"
+          },
+          "taken": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "HELD",
+                "SOLD",
+                "BLOCKED"
+              ]
+            },
+            "description": "`seat_id` → status. Free seats are absent."
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BestAvailableDto": {
+        "type": "object",
+        "required": [
+          "ticket_type_id",
+          "count"
+        ],
+        "properties": {
+          "ticket_type_id": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "performance_id": {
+            "type": "string",
+            "description": "Required on multi-date events."
+          }
+        }
+      },
+      "ErrorDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string",
+            "description": "Stable identifier to match on."
+          },
+          "message": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

@@ -2,11 +2,11 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "UnderPass Developer Docs",
-  "description": "Public API for events and ticket checkout on the UnderPass platform",
+  "description": "Public API for events, reservations, seats, waiting rooms and ticket checkout on the UnderPass platform",
   "colors": {
-    "primary": "#02A586",
-    "light": "#00DAC6",
-    "dark": "#027a63"
+    "primary": "#00A98B",
+    "light": "#00D1B2",
+    "dark": "#008A72"
   },
   "favicon": "/favicon.png",
   "navigation": {
@@ -18,13 +18,33 @@
             "group": "Getting started",
             "pages": [
               "index",
-              "quickstart"
+              "quickstart",
+              "changelog"
             ]
           },
           {
-            "group": "Integration guides",
+            "group": "Selling",
             "pages": [
-              "analytics-pixels"
+              "guides/reservations",
+              "guides/performances",
+              "guides/seating",
+              "guides/waiting-room",
+              "guides/fees-and-installments"
+            ]
+          },
+          {
+            "group": "Tickets",
+            "pages": [
+              "guides/group-tickets-and-attendees",
+              "guides/bar-perks",
+              "guides/ticket-attributes"
+            ]
+          },
+          {
+            "group": "Measurement",
+            "pages": [
+              "analytics-pixels",
+              "guides/attribution"
             ]
           }
         ]
@@ -55,6 +75,10 @@
       {
         "label": "Support",
         "href": "mailto:developers@underpass.com.co"
+      },
+      {
+        "label": "Status",
+        "href": "https://underpass.com.co"
       }
     ],
     "primary": {
@@ -76,5 +100,36 @@
     "socials": {
       "github": "https://github.com/under-pass"
     }
+  },
+  "background": {
+    "color": {
+      "light": "#FFFFFF",
+      "dark": "#101010"
+    }
+  },
+  "appearance": {
+    "default": "dark",
+    "strict": false
+  },
+  "fonts": {
+    "family": "Lexend"
+  },
+  "styling": {
+    "codeblocks": "dark"
+  },
+  "seo": {
+    "metatags": {
+      "og:site_name": "UnderPass Developer Docs",
+      "og:type": "website",
+      "og:image": "https://docs.underpass.com.co/images/og.png",
+      "og:locale": "en_US",
+      "twitter:card": "summary_large_image",
+      "twitter:image": "https://docs.underpass.com.co/images/og.png",
+      "keywords": "ticketing API, event ticketing, white-label checkout, Colombia, UnderPass, boletería, venta de boletas, seat map API, waiting room, ticket reservations",
+      "author": "UnderPass",
+      "robots": "index, follow",
+      "theme-color": "#101010"
+    },
+    "indexing": "navigable"
   }
 }

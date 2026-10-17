@@ -1,0 +1,77 @@
+---
+title: "Waiting room"
+description: "High-demand on-sales: a fair line in front of the tickets, with a pass you must present to reserve"
+---
+
+An organizer can turn on a **waiting room** for an event (`event.waiting_room === true`). From
+then on nobody reserves without an admitted pass: `POST /api/checkout/holds` answers
+`403 QUEUE_PASS_REQUIRED`, and so does `checkout/start` without a `hold_id`. Your storefront
+must put the buyer in the line, poll their place, and present the pass once admitted.
+
+Events without the room (the default) are unaffected. A storefront that never implements this
+page keeps selling every event that has no room.
+
+## How the line works
+
+- **Before `waiting_room_opens_at`** everyone pre-queues with no position. When the doors open
+  the pre-queue is **drawn at random**: arriving at 7:00 or 7:59 gives the same chance.
+- **After opening**, first come first served. Admission runs at `waiting_room_rate` people
+  per minute. An admitted pass lives `waiting_room_minutes`.
+- `waiting_room_opens_at` may be `null`: the room is open from the start and only paces the
+  flow.
+
+All three values are on the public event payload, so you can show "abre en 12:34" and an
+estimate.
+
+## Endpoints
+
+Same **session key** as [holds](/guides/reservations): the pass belongs to the browser that
+queued, and only that browser's holds may use it.
+
+| Verb | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/checkout/queue` | Join, or come back to, the line (`{ event_id, session_key }`) |
+| `GET` | `/api/checkout/queue/{id}?session_key=…` | Poll the place. **The poll is also what moves the line**: admission happens when someone asks. |
+| `DELETE` | `/api/checkout/queue/{id}?session_key=…` | Leave |
+
+### The entry
+
+```json
+{
+  "id": "qe_…",               // the pass once status is ADMITTED
+  "event_id": "…",
+  "status": "WAITING",        // WAITING | ADMITTED | EXPIRED | LEFT
+  "position": 37,             // 1-based; null while pre-queuing (not drawn yet)
+  "waiting_ahead": 36,
+  "estimated_minutes": 2,
+  "open": true,               // doors open?
+  "opens_at": null,
+  "admitted_at": null,
+  "pass_expires_at": null,
+  "rate": 60
+}
+```
+
+A quiet room admits on the spot: the first response may already be `ADMITTED`.
+
+## Implementation
+
+1. On the tickets page of an event with `waiting_room`, call `POST /api/checkout/queue` with
+   the session key. Keep `id` in `sessionStorage` so a reload keeps the place.
+2. While `WAITING`, hide the tickets and poll `GET /api/checkout/queue/{id}` every 4 to 5
+   seconds. Show `position`, `estimated_minutes`, and a countdown to `opens_at` when
+   `open` is false. A session that stops polling for two minutes is dropped from the line.
+3. When `status` becomes `ADMITTED`, show the tickets and a clock to `pass_expires_at`.
+4. Send `queue_pass: entry.id` on `POST /api/checkout/holds`. The pass stays valid until it
+   expires, so the buyer may change their selection.
+5. `checkout/start` with `hold_id` needs no pass: the hold already went through the line. If
+   you reserve inline (no hold), send `queue_pass` on `checkout/start` instead.
+
+### When the pass is refused
+
+`403 QUEUE_PASS_INVALID` means the pass expired, belongs to another session, or is for
+another event. Call `POST /api/checkout/queue` again: an expired or left entry re-joins at
+the back of the line. Never leave the buyer on a dead button.
+
+`400 QUEUE_NOT_ENABLED` means you joined a room the event does not have; just show the
+tickets.

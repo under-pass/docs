@@ -1,0 +1,110 @@
+---
+title: "Reservations (holds)"
+description: "Reserve the buyer's tickets the moment they pick them, so nobody is sold a ticket that is already gone"
+---
+
+When a buyer picks tickets, **reserve them first**, then show the form. A hold takes the
+tickets out of everyone else's `available` for the event's hold window (default 10 minutes,
+`event.hold_minutes`). Checkout then takes the hold over, so the tickets the buyer was
+promised are the tickets they get. Two buyers can never both hold the last ticket.
+
+Holds are optional for the API but mandatory for a good storefront: without one, a buyer
+can spend five minutes filling in their details and get `INSUFFICIENT_TICKETS` at the end.
+
+<Note>
+  `available` on every ticket row **already excludes other buyers' holds**. A ticket type can
+  read "Agotado" with no ticket sold yet, and come back on sale within a minute when those
+  holds expire. Don't "correct" it client-side.
+</Note>
+
+## The flow
+
+| # | When | Call |
+| --- | --- | --- |
+| 1 | Buyer taps "Continuar" with a selection | `POST /api/checkout/holds` → `hold` with `expires_at` |
+| 2 | Buyer changes quantities on the form | `PATCH /api/checkout/holds/{id}` (window restarts) |
+| 3 | Buyer submits | `POST /api/checkout/start` with `hold_id` |
+| 4 | Buyer leaves | `DELETE /api/checkout/holds/{id}` (optional; it expires on its own) |
+
+### Session key
+
+Every hold belongs to a **session key**: an opaque string of 8 to 128 characters that identifies
+the buyer's browser, never the person. Generate it once (a UUID in an `httpOnly` cookie is the
+right place) and send the same value on every hold call. One session has **one active hold per
+event**: a new `POST` replaces the previous one. A hold is read or changed only with its own key.
+
+<Warning>
+  Keep the session key server-side (a cookie your backend reads) when you can. A key that lives
+  in `localStorage` lets one tab release another visitor's reservation if it leaks.
+</Warning>
+
+## 1. Reserve
+
+```js
+const hold = await fetch(`${API}/api/checkout/holds`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    event_id: event.id,
+    session_key: SESSION_KEY,
+    items: [
+      // quantity is in units of the ticket type; group tickets lock quantity × group_size
+      { ticket_type_id, selling_stage_id, quantity: 2 },
+    ],
+  }),
+}).then((r) => r.json()).then((b) => b.data);
+
+// → { id, event_id, status: "ACTIVE", expires_at, order_id: null,
+//     items: [{ ticket_type_id, selling_stage_id, performance_id, quantity, ticket_count }] }
+```
+
+Show a countdown from `expires_at`. When it reaches zero the tickets are back on sale, and the
+only way forward is a new selection (which makes a fresh hold).
+
+Items accept the same optional fields as checkout items: `performance_id` for
+[multi-date events](/guides/performances) and `seat_ids` for [numbered seating](/guides/seating).
+
+### Errors
+
+| Status | `code` | Meaning |
+| --- | --- | --- |
+| `400` | `INSUFFICIENT_TICKETS` | Not enough stock. `detail.available` is what is left; `detail.reserved_by_others` tells you whether other carts are holding the rest (they may come back) or the tickets are sold. |
+| `400` | `PERFORMANCE_REQUIRED` | The event has several dates and the item did not say which. |
+| `403` | `QUEUE_PASS_REQUIRED` / `QUEUE_PASS_INVALID` | The event has a [waiting room](/guides/waiting-room) and this session has no valid turn. |
+| `409` | `SEAT_TAKEN` | One of the picked seats was just taken; `detail.seat_ids` lists which. |
+
+## 2. Checkout with the hold
+
+```js
+await fetch(`${API}/api/checkout/start`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    event_id: event.id,
+    items, // same items as the hold
+    customer,
+    accept_terms: true,
+    hold_id: hold.id,
+  }),
+});
+```
+
+The order takes the hold over (`ACTIVE` → `CONVERTED`) and the payment window starts. If the
+hold ran out before submit you get `409` with `code: "HOLD_EXPIRED"` (or `HOLD_NOT_ACTIVE` if it
+was already used or released): show "tu reserva venció" and send the buyer back to the picker.
+
+Without `hold_id`, `checkout/start` reserves inline at that moment, exactly as it always did.
+That path still works for every storefront; it just loses the guarantee between "pick" and "pay".
+
+## Lifecycle
+
+| Status | Meaning |
+| --- | --- |
+| `ACTIVE` | The cart. Lives `event.hold_minutes`. |
+| `CONVERTED` | An order exists and is awaiting payment. The payment window is longer than the cart window. |
+| `CONSUMED` | The first payment landed; the tickets are sold. |
+| `RELEASED` | The buyer let go, or the order was cancelled. |
+| `EXPIRED` | A window ran out; the tickets went back on sale. |
+
+`GET /api/checkout/holds/{id}` returns the current state (and expires a hold whose window is
+over). You rarely need it: the countdown and the checkout response tell you everything.

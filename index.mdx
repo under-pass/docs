@@ -1,91 +1,115 @@
 ---
 title: "UnderPass Developer Docs"
-description: "Build your own event landing and checkout on top of the UnderPass platform"
+description: "Build your own event landing and ticket checkout on the UnderPass platform: events, reservations, seats, waiting rooms and payments through one public API"
 ---
 
 <Note>
-  This documentation is for **white-label integrators** who want to host their own
-  branded event listing and ticket checkout, while UnderPass handles tickets,
-  orders, payments, and settlements behind the scenes.
+  This documentation is for **white-label integrators** who host their own branded event
+  listing and ticket checkout while UnderPass handles inventory, orders, payments, tickets
+  and settlement behind the scenes.
 </Note>
 
 ## What you get
 
-A small, stable HTTP API that covers the full sales journey:
+A small, stable HTTP API that covers the whole sales journey:
 
-- **List events** for your tenant account
-- **Render an event detail page** with selling stages, ticket types, and organizer info
-- **Validate promo codes** — including codes that unlock hidden selling stages
-- **Validate sales links** — for promoter-attributed or private-presale flows
-- **Fetch referral programs + validate referral codes** — feature-flag the
-  referral UI on your event pages
-- **Start a checkout session** that redirects the buyer to a hosted payment page
-- **Poll order status** after payment to render a confirmation screen
+- **List events** for your tenant account and **render an event page** with localities,
+  ticket types, selling stages, prices, dates and organizer info
+- **Reserve tickets** the moment a buyer picks them, so nobody is sold a ticket that is gone
+- **Sell seats** on numbered localities, with a public seat map and best-available fallback
+- **Put buyers in a waiting room** for high-demand on-sales, without building a queue
+- **Start a checkout** that redirects the buyer to a hosted payment page, with installments,
+  promo codes, sales links, referrals, group tickets, attendees and bar perks
+- **Poll the order** after payment to render a confirmation screen
 
-You don't need to handle payments, settlement, tax calculation, invoices, or
-ticket delivery — UnderPass owns all of that.
+You never handle payments, settlement, taxes, invoices or ticket delivery.
 
 ## How it fits together
 
-Your frontend (any framework) calls the UnderPass Public API at
-`api.underpass.com.co` over HTTPS. UnderPass owns everything downstream:
-
-- **Payment provider** — Bold or ePayco, whichever the organizer has configured
-- **Invoicing + settlement** — Alegra integration, monthly invoicing, fee accrual
-
-Your frontend never talks to the payment provider directly. After a buyer
-submits checkout, you redirect them to a URL we return — they pay there, then
-land back on a URL you provide. You poll us to render the confirmation page.
+Your frontend, in any framework, calls `https://api.underpass.com.co` over HTTPS. After a
+buyer submits checkout you redirect them to the URL we return; they pay there (Bold or
+ePayco, whichever the organizer configured) and land back on a URL you provide. You poll us
+to render the confirmation page.
 
 ## The endpoints
 
-### Core sales flow (always required)
+### Core sales flow
 
 | Verb | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/events/public?account_id=…` | List your tenant's published events |
-| `GET` | `/api/events/public/{slug}` | Single event detail (with tickets, selling stages, organizer) |
-| `POST` | `/api/checkout/allowed-document-types` | Filter document types per locality |
-| `POST` | `/api/checkout/start` | Create an order, get a payment redirect URL |
-| `GET` | `/api/checkout/status/{orderId}` | Poll order status post-payment |
+| `GET` | `/api/events/public/{slug}` | Event detail: tickets, stages, prices, dates, organizer, pixels |
+| `POST` | `/api/checkout/holds` | Reserve the buyer's selection ([Reservations](/guides/reservations)) |
+| `GET` `PATCH` `DELETE` | `/api/checkout/holds/{id}` | Read, resize or release a reservation |
+| `POST` | `/api/checkout/allowed-document-types` | Document types allowed for the cart's localities |
+| `POST` | `/api/checkout/start` | Create the order, get the payment redirect URL |
+| `GET` | `/api/checkout/status/{orderId}` | Poll the order after payment |
 
-### Feature endpoints (enable per event/tenant)
+### Per-event features
 
 | Verb | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/promo-codes/validate` | Validate a promo code; may also unlock hidden selling stages |
-| `POST` | `/api/sales-links/validate` | Validate a private sales link code; unlocks private tickets |
-| `GET` | `/api/referrals/program/{eventId}` | Public referral program details for an event |
-| `POST` | `/api/referrals/validate` | Validate a referral code on checkout |
+| `GET` | `/api/events/public/{slug}/seating` | Seat map and current occupancy ([Numbered seating](/guides/seating)) |
+| `GET` | `/api/events/public/{slug}/seating/occupancy` | Occupancy only, for polling |
+| `POST` | `/api/events/public/{slug}/seating/best-available` | Contiguous free seats for a ticket type |
+| `POST` | `/api/checkout/queue` | Join the waiting room ([Waiting room](/guides/waiting-room)) |
+| `GET` `DELETE` | `/api/checkout/queue/{id}` | Poll the place in line, or leave |
+| `POST` | `/api/promo-codes/validate` | Validate a promo code; may unlock hidden selling stages |
+| `POST` | `/api/sales-links/validate` | Validate a private sales link code |
+| `GET` | `/api/referrals/program/{eventId}` | Public referral program for an event |
+| `POST` | `/api/referrals/validate` | Validate a referral code |
 
-Anything outside this list is not reachable from the public internet —
-the ingress only allows these specific paths through.
+Anything outside this list is not reachable from the public internet.
 
 ## Identity & scoping
 
-All requests are scoped to your **tenant account UUID** (`account_id`), provided
-during onboarding. There's no per-user authentication for these endpoints —
-buyers don't need accounts to purchase tickets. The `account_id` on listing
-endpoints filters to your events; ticket type IDs on checkout endpoints
-implicitly scope to your tenant because tickets belong to events that belong
-to your account.
+Requests are scoped to your **tenant account UUID** (`account_id`), provided during
+onboarding. There is no per-user authentication: buyers do not need accounts. Ticket type ids
+on checkout endpoints implicitly scope to your tenant, because tickets belong to events that
+belong to your account. Reservations and waiting-room passes belong to a **session key** you
+generate per browser.
 
-For higher-trust integrations (rate-limit increases, audit logging, write
-operations beyond ticket purchase) we issue per-tenant API keys — sent as
-`X-UnderPass-Api-Key`. Not required for the public surface above.
+For higher-trust integrations (rate-limit increases, audit logging) we issue per-tenant API
+keys, sent as `X-UnderPass-Api-Key`. Not required for the public surface above.
 
-## Next steps
+## Guides
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/quickstart">
-    End-to-end JavaScript example: list → checkout → confirm.
+    List → reserve → checkout → confirm, in plain `fetch`.
+  </Card>
+  <Card title="Reservations" icon="clock" href="/guides/reservations">
+    Hold tickets at selection; take the hold over at checkout.
+  </Card>
+  <Card title="Multi-date events" icon="calendar-days" href="/guides/performances">
+    A date selector before the tickets; `performance_id` on every item.
+  </Card>
+  <Card title="Numbered seating" icon="chair" href="/guides/seating">
+    Read the plan, draw it, pick seats or take the best available.
+  </Card>
+  <Card title="Waiting room" icon="users" href="/guides/waiting-room">
+    A fair line for on-sales, with a pass the hold must present.
+  </Card>
+  <Card title="Group tickets & attendees" icon="user-group" href="/guides/group-tickets-and-attendees">
+    Tables and 2-for-1s; one ticket per person or all to the buyer.
+  </Card>
+  <Card title="Bar perks" icon="martini-glass" href="/guides/bar-perks">
+    Cover with consumo, included or purchasable at checkout.
+  </Card>
+  <Card title="Ticket attributes" icon="hourglass-half" href="/guides/ticket-attributes">
+    Entry cutoff, late fee and minimum consumption.
+  </Card>
+  <Card title="Fees & installments" icon="receipt" href="/guides/fees-and-installments">
+    The buyer-facing fee, computed per payment.
+  </Card>
+  <Card title="Marketing attribution" icon="bullseye" href="/guides/attribution">
+    UTM, click ids and referrer on the order.
   </Card>
   <Card title="Analytics pixels" icon="chart-line" href="/analytics-pixels">
-    **Required**: Meta & TikTok pixel events you must fire so conversions
-    show up correctly. Skip this and ad attribution breaks.
+    **Required.** The Meta and TikTok funnel, deduplicated with the server.
   </Card>
   <Card title="API reference" icon="code" href="/api-reference/introduction">
-    Every endpoint, payload, and response.
+    Every endpoint, payload, response and error code.
   </Card>
 </CardGroup>
 

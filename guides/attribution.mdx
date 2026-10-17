@@ -1,0 +1,56 @@
+---
+title: "Marketing attribution (UTM capture)"
+description: "Send the buyer's first-touch UTM, click ids and referrer with the order so campaigns get credit"
+---
+
+`POST /api/checkout/start` accepts a `tracking` object. UnderPass stores it with the order and
+uses it for two things: campaign attribution in the organizer's reports, and server-side
+matching of the conversion on Meta (Conversions API) and TikTok (Events API). Everything in it
+is optional; send what you have.
+
+```json
+"tracking": {
+  "utm_source": "instagram",
+  "utm_medium": "paid_social",
+  "utm_campaign": "lanzamiento",
+  "utm_content": "video-a",
+  "utm_term": null,
+  "gclid": null,
+  "fbclid": "IwAR…",
+  "ttclid": "E.C.P…",
+  "ttp": "7f3a…",
+  "referrer": "https://www.instagram.com/",
+  "landing_page": "https://tickets.example.com/eventos/mi-evento?utm_source=instagram&…",
+  "channel": "paid_social",
+  "fbc": "fb.1.1700000000.IwAR…",
+  "fbp": "fb.1.1700000000.123456",
+  "client_user_agent": "Mozilla/5.0 …",
+  "client_ip_address": "203.0.113.7"
+}
+```
+
+## Capture rules
+
+- **First touch wins.** Read `utm_*`, `gclid`, `fbclid`, `ttclid`, `document.referrer` and the
+  full landing URL on the buyer's **first** page view of the session, store them (a cookie or
+  `sessionStorage`), and keep them even if a later page carries different parameters. A
+  mid-session UTM must not hijack the attribution.
+- **`ttclid`** arrives as `?ttclid=` on TikTok ad clicks. Keep it 30 days (TikTok's attribution
+  window). **`ttp`** is the value of the `_ttp` cookie the TikTok pixel sets; read it at submit.
+- **`fbc` / `fbp`** are the Meta cookies (`_fbc`, `_fbp`); read them at submit. If you have an
+  `fbclid` but no `_fbc` cookie, build it as `fb.1.<timestamp ms>.<fbclid>`.
+- **`channel`** is your derived bucket (`paid_social`, `organic_search`, `direct`, …). Optional;
+  UnderPass derives one too when it is missing.
+- **`client_ip_address`** should be the buyer's real IP. If your storefront calls the API from a
+  server, forward the IP from your edge (`cf-connecting-ip`, `x-real-ip`, or the first
+  `x-forwarded-for` hop). Private or loopback addresses are worse than none.
+- **`client_user_agent`** is `navigator.userAgent`, or the request header when called
+  server-side.
+
+## Why it matters
+
+The same order fires a browser pixel event and a server-side event on both ad platforms,
+deduplicated by the order id (see [Analytics pixels](/analytics-pixels)). The server-side
+event can only be matched to the ad click through `fbc` / `fbp` / `ttclid` / `ttp`, the IP and
+the user agent. Orders without them still count in your reports, but the ad platform may not
+credit the campaign.

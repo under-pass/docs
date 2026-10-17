@@ -1,0 +1,33 @@
+---
+title: "Ticket attributes: entry cutoff, late fee, minimum consumption"
+description: "Informational attributes on a ticket type that your picker should surface"
+---
+
+A ticket type may carry three attributes the organizer sets. None of them changes the price
+UnderPass charges; they describe conditions the organizer enforces at the door, and a buyer
+must see them **before** choosing.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `entry_cutoff` | ISO 8601 date-time, `null` | **Time-restricted ticket.** The holder must enter before this time. A scan after it flags the ticket as a late arrival at the gate (the organizer decides what happens: a surcharge, or no entry). |
+| `late_fee` | integer COP, `null` | What the organizer charges a late arrival at the door. |
+| `min_consumption` | integer COP, `null` | Minimum spend the organizer collects at the door. |
+
+They are on every `ticketType` of the public payload (inside `ticketAvailability[]`).
+
+## What to render
+
+- With `entry_cutoff`: "Entrada hasta las 10:00 p. m." on the ticket card, and again in the
+  checkout summary. Format in the event's local time (Colombia is UTC−5 all year).
+- With `late_fee`: "Después de esa hora, recargo de $20.000 en puerta."
+- With `min_consumption`: "Consumo mínimo $50.000 en la barra."
+
+The ticket email repeats them, so the holder is not surprised at the gate.
+
+## Not to confuse with
+
+- **Selling stages** (`sellingStage.start_date` / `end_date`) restrict **when a price is on
+  sale**, not when the holder may enter. A ticket type is purchasable only through a stage
+  whose window contains "now"; `ticketAvailability[]` already filters to those.
+- **Performances** restrict **which date** a ticket is for. See
+  [Multi-date events](/guides/performances).

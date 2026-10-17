@@ -1,0 +1,58 @@
+---
+title: "Bar perks (cover & consumo)"
+description: "What a ticket buys at the bar, and the extras a buyer can add at checkout"
+---
+
+A ticket type can carry **bar perks**: a product, a combo, or bar credit the holder redeems at
+the venue's bar through the tickets app or the QR voucher in their email. Perks appear on the
+public payload under each ticket type:
+
+```json
+"ticketType": {
+  "id": "tt_…", "name": "Cover con consumo",
+  "barPerks": [
+    { "id": "perk_1", "kind": "credit", "credit_amount": 50000, "quantity": 1,
+      "price": 0, "label": null, "optional": false, "is_active": true },
+    { "id": "perk_2", "kind": "product", "product_id": "prod_…", "quantity": 1,
+      "price": 25000, "label": "Botella de agua + shot", "description": "…",
+      "optional": true, "is_active": true }
+  ]
+}
+```
+
+`price` is the whole story:
+
+| `price` | Meaning | What you do |
+| --- | --- | --- |
+| `0` | Already inside the ticket. Every holder gets it. | **Show it** on the ticket card ("incluye $50.000 de consumo"). Nothing to send. |
+| `> 0` | A purchasable add-on, usually below the bar's list price. | Offer it at checkout; send what the buyer accepted in `bar_perks`. |
+
+`kind` is `product` (with `product_id`), `bundle` (a combo, `bundle_id`) or `credit`
+(`credit_amount` in integer COP). `quantity` is how many of the product or combo one ticket
+earns. Ignore perks with `is_active: false`.
+
+## Adding a perk at checkout
+
+```json
+{
+  "event_id": "…",
+  "items": [{ "ticket_type_id": "tt_…", "selling_stage_id": "…", "quantity": 2 }],
+  "bar_perks": [{ "perk_id": "perk_2", "count": 2 }],
+  "customer": { "…": "…" },
+  "accept_terms": true
+}
+```
+
+Only the id and how many. The **price is read server-side**; the perk's amount is added to the
+order total and the buyer-facing fee applies to it like any other line. `count` is capped at
+the number of tickets of that ticket type in the order (two tickets, at most two perks).
+
+| `code` | Meaning |
+| --- | --- |
+| `BAR_PERK_NOT_FOUND` / `BAR_PERK_NOT_AVAILABLE` | Unknown or inactive perk |
+| `BAR_PERK_NOT_PURCHASABLE` | The perk is priced `0`: it is already inside the ticket |
+| `BAR_PERK_TICKET_TYPE_NOT_IN_ORDER` | The perk's ticket type is not in `items` |
+| `BAR_PERK_COUNT_EXCEEDS_TICKETS` | `count` above the tickets that earn it |
+
+After payment the holder receives the voucher in the ticket email and in the tickets app.
+Nothing else is needed from the storefront.
