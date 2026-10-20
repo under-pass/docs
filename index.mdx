@@ -69,8 +69,8 @@ on checkout endpoints implicitly scope to your tenant, because tickets belong to
 belong to your account. Reservations and waiting-room passes belong to a **session key** you
 generate per browser.
 
-For higher-trust integrations (rate-limit increases, audit logging) we issue per-tenant API
-keys, sent as `X-UnderPass-Api-Key`. Not required for the public surface above.
+There is no API key on the public surface today. Per-tenant keys for higher-trust integrations
+(audit logging, dedicated budgets) are on the roadmap; nothing to send yet.
 
 ## Guides
 
