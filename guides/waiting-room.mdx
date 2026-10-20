@@ -15,8 +15,10 @@ page keeps selling every event that has no room.
 
 - **Before `waiting_room_opens_at`** everyone pre-queues with no position. When the doors open
   the pre-queue is **drawn at random**: arriving at 7:00 or 7:59 gives the same chance.
-- **After opening**, first come first served. Admission runs at `waiting_room_rate` people
-  per minute. An admitted pass lives `waiting_room_minutes`.
+- **After opening**, first come first served: every joiner takes the next number. Admission
+  runs at `waiting_room_rate` people per minute, continuously — think of a serving number that
+  advances `rate / 60` every second; you are in the moment it reaches your number. An admitted
+  pass lives `waiting_room_minutes` from that moment.
 - `waiting_room_opens_at` may be `null`: the room is open from the start and only paces the
   flow.
 
@@ -31,7 +33,7 @@ queued, and only that browser's holds may use it.
 | Verb | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/checkout/queue` | Join, or come back to, the line (`{ event_id, session_key }`) |
-| `GET` | `/api/checkout/queue/{id}?session_key=…` | Poll the place. **The poll is also what moves the line**: admission happens when someone asks. |
+| `GET` | `/api/checkout/queue/{id}?session_key=…` | Poll the place. Cheap on both sides: the answer is arithmetic, and `poll_after_ms` tells you when to ask again. |
 | `DELETE` | `/api/checkout/queue/{id}?session_key=…` | Leave |
 
 ### The entry
@@ -41,14 +43,16 @@ queued, and only that browser's holds may use it.
   "id": "qe_…",               // the pass once status is ADMITTED
   "event_id": "…",
   "status": "WAITING",        // WAITING | ADMITTED | EXPIRED | LEFT
-  "position": 37,             // 1-based; null while pre-queuing (not drawn yet)
+  "number": 1237,             // the queue number; null while pre-queuing (not drawn yet)
+  "position": 37,             // 1-based; null while pre-queuing or once admitted
   "waiting_ahead": 36,
   "estimated_minutes": 2,
   "open": true,               // doors open?
   "opens_at": null,
   "admitted_at": null,
   "pass_expires_at": null,
-  "rate": 60
+  "rate": 60,
+  "poll_after_ms": 8200       // when to poll again (3 s near the front, up to 60 s far back)
 }
 ```
 
@@ -58,9 +62,11 @@ A quiet room admits on the spot: the first response may already be `ADMITTED`.
 
 1. On the tickets page of an event with `waiting_room`, call `POST /api/checkout/queue` with
    the session key. Keep `id` in `sessionStorage` so a reload keeps the place.
-2. While `WAITING`, hide the tickets and poll `GET /api/checkout/queue/{id}` every 4 to 5
-   seconds. Show `position`, `estimated_minutes`, and a countdown to `opens_at` when
-   `open` is false. A session that stops polling for two minutes is dropped from the line.
+2. While `WAITING`, hide the tickets and poll `GET /api/checkout/queue/{id}` after
+   `poll_after_ms` (fall back to 5 seconds if you ignore it). Show `position`,
+   `estimated_minutes`, and a countdown to `opens_at` when `open` is false. Nobody is dropped
+   for not polling: your number keeps its place, and if it has already been served when you
+   come back, the entry simply reads `ADMITTED` or `EXPIRED`.
 3. When `status` becomes `ADMITTED`, show the tickets and a clock to `pass_expires_at`.
 4. Send `queue_pass: entry.id` on `POST /api/checkout/holds`. The pass stays valid until it
    expires, so the buyer may change their selection.
