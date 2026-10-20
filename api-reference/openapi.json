@@ -617,7 +617,7 @@
         ],
         "summary": "Join (or return to) an event's waiting room",
         "operationId": "joinQueue",
-        "description": "Admits on the spot when the doors are open and the minute's budget allows; otherwise returns the place in line. The entry id is the pass to send as `queue_pass` once ADMITTED. An expired or left entry re-joins at the back.",
+        "description": "Takes the next number. When the doors are open and the serving number has already reached it (a quiet room), the entry is ADMITTED on the spot; otherwise it returns the place in line. Before `waiting_room_opens_at` the entry pre-queues with no number: the order is drawn at random when the doors open. The entry id is the pass to send as `queue_pass` once ADMITTED. An expired or left entry re-joins at the back.",
         "requestBody": {
           "required": true,
           "content": {
@@ -669,7 +669,7 @@
         ],
         "summary": "Poll a place in line",
         "operationId": "getQueueEntry",
-        "description": "Also what moves the line: admission happens when someone polls. Poll every 4 to 5 seconds while WAITING; an entry unseen for 2 minutes is dropped.",
+        "description": "A read: admission is arithmetic on the entry's number against the event's serving number, which advances continuously at `rate` per minute, so polling neither moves the line nor keeps a place. Poll after `poll_after_ms`. Nobody is dropped for not polling: a number that has already been served reads ADMITTED (while its pass lives) or EXPIRED when you come back.",
         "parameters": [
           {
             "name": "id",
@@ -2570,10 +2570,15 @@
               "LEFT"
             ]
           },
+          "number": {
+            "type": "integer",
+            "nullable": true,
+            "description": "The queue number (\"take a number\"); null while pre-queuing, before the draw at opening. Admission happens when the event's serving number reaches it."
+          },
           "position": {
             "type": "integer",
             "nullable": true,
-            "description": "1-based place in line; null while pre-queuing (drawn at opening) or not waiting."
+            "description": "1-based place in line; null while pre-queuing (drawn at opening) or once admitted."
           },
           "waiting_ahead": {
             "type": "integer",
@@ -2605,6 +2610,10 @@
           "rate": {
             "type": "integer",
             "description": "Admissions per minute."
+          },
+          "poll_after_ms": {
+            "type": "integer",
+            "description": "When to poll again, in milliseconds: about 3 s when the turn is near, up to 60 s far back in the line, jittered so a crowd does not poll in step. Polling sooner changes nothing."
           }
         }
       },

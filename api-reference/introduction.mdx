@@ -26,9 +26,11 @@ Identity is established at two layers:
    tenant's events. Checkout endpoints scope implicitly through the
    `ticket_type_id` you pass (which belongs to an event, which belongs to
    your account).
-2. **Optional API key** — for higher-trust integrations or rate-limit
-   increases, pass `X-UnderPass-Api-Key: <key>` (issued by UnderPass during
-   onboarding). Not required for the public surface.
+2. **Session key** — reservations and waiting-room passes belong to an
+   opaque per-browser `session_key` you generate (see
+   [Reservations](/guides/reservations)). There is no API key on the public
+   surface today; per-tenant keys for higher-trust integrations are on the
+   roadmap, not something to send yet.
 
 ## Response envelope
 
@@ -60,10 +62,17 @@ changes).
 
 ## Rate limits
 
-The public endpoints are rate-limited at the ingress layer. Default budget
-is generous for normal browsing patterns; if you hit a `429`, back off
-with exponential delay and retry. Per-tenant limit increases are available
-via the API key path — contact us.
+There is no per-IP throttle on the public routes at the edge: a storefront
+behind a corporate NAT or a mobile carrier is not punished for sharing an
+address. The gateway keeps a generous safety budget (on the order of
+10,000 requests per minute per client) and answers `429` beyond it; if you
+ever see one, back off with exponential delay and retry.
+
+Admission control for a high-demand on-sale is the
+[waiting room](/guides/waiting-room), not rate limiting: it meters buyers
+per event at the rate the organizer sets, and polling it is cheap on both
+sides (`poll_after_ms` tells you when to ask again). Please respect that
+cadence, and poll `checkout/status` every 2 to 3 seconds at most.
 
 ## Idempotency
 

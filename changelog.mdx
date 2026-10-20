@@ -9,6 +9,11 @@ description: "What changed in the public API, newest first. Everything is additi
   `queue_pass` on holds and `checkout/start`. Events with the room on answer `403 QUEUE_PASS_REQUIRED`
   to a reservation without a turn. [Guide](/guides/waiting-room).
 
+  *Oct 20:* the line is now a continuous serving number. The entry carries `number` (the queue
+  number) and `poll_after_ms` (when to poll again); polling is a plain read, admission no longer
+  depends on it, and nobody is dropped for not polling. Storefronts that poll on their own clock
+  keep working.
+
   **Numbered seating.** `locality.seating`; `GET /api/events/public/{slug}/seating`,
   `…/seating/occupancy`, `POST …/seating/best-available`; `seat_ids` on hold and checkout items;
   `seat_label` on tickets; `409 SEAT_TAKEN`. Items without seats get the best available.
